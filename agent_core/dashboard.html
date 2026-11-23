@@ -1,0 +1,2243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agente UNSA — Cockpit de Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --bg-canvas: #090c10;
+      --bg-panel: #10151e;
+      --bg-elevated: #151c28;
+      --bg-input: #0c1017;
+      --border-hairline: rgba(226, 232, 240, 0.08);
+      --border-strong: rgba(226, 232, 240, 0.16);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-cyan: #38bdf8;
+      --accent-cyan-dim: rgba(56, 189, 248, 0.12);
+      --status-ok: #10b981;
+      --status-ok-dim: rgba(16, 185, 129, 0.14);
+      --status-warn: #f59e0b;
+      --status-warn-dim: rgba(245, 158, 11, 0.14);
+      --status-danger: #f43f5e;
+      --status-danger-dim: rgba(244, 63, 94, 0.14);
+      --font-display: "Space Grotesk", system-ui, sans-serif;
+      --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --radius-lg: 14px;
+      --radius-md: 10px;
+      --radius-sm: 7px;
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      max-width: 100%;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Sutil textura atmosférica sin ruido excesivo */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(900px 420px at 12% -8%, rgba(56, 189, 248, 0.06), transparent 65%),
+        radial-gradient(700px 360px at 88% 108%, rgba(16, 185, 129, 0.045), transparent 60%);
+      z-index: 0;
+    }
+
+    .app-shell {
+      position: relative;
+      z-index: 1;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 18px 22px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ================================================================
+       HEADER COCKPIT (ESTADO EN VIVO + RELOJ LIMA + TELEMETRÍA)
+       ================================================================ */
+    .cockpit-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-hairline);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      border-radius: var(--radius-lg);
+      padding: 14px 18px;
+    }
+
+    .brand-status-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 260px;
+    }
+
+    .status-beacon {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      flex-shrink: 0;
+      background-color: var(--status-warn);
+      transition: background-color 0.25s var(--ease-out);
+    }
+
+    .status-beacon::after {
+      content: "";
+      position: absolute;
+      inset: -4px;
+      border-radius: 999px;
+      border: 2px solid currentColor;
+      opacity: 0.45;
+      animation: pulse-ring 2.2s ease-out infinite;
+    }
+
+    .status-beacon.is-active {
+      background-color: var(--status-ok);
+      color: var(--status-ok);
+    }
+
+    .status-beacon.is-syncing {
+      background-color: var(--status-warn);
+      color: var(--status-warn);
+    }
+
+    .status-beacon.is-stopped {
+      background-color: var(--status-danger);
+      color: var(--status-danger);
+    }
+
+    .status-beacon.is-stopped::after {
+      animation: none;
+      opacity: 0.2;
+    }
+
+    @keyframes pulse-ring {
+      0% { transform: scale(0.85); opacity: 0.65; }
+      75% { transform: scale(1.65); opacity: 0; }
+      100% { transform: scale(1.65); opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .status-beacon::after { animation: none; }
+      * { transition-duration: 0.01ms !important; }
+    }
+
+    .brand-title-wrap h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-pill-text {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 9px;
+      border-radius: 999px;
+      background: var(--status-warn-dim);
+      color: var(--status-warn);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+    }
+
+    .status-pill-text.is-active {
+      background: var(--status-ok-dim);
+      color: var(--status-ok);
+      border-color: rgba(16, 185, 129, 0.28);
+    }
+
+    .status-pill-text.is-stopped {
+      background: var(--status-danger-dim);
+      color: var(--status-danger);
+      border-color: rgba(244, 63, 94, 0.28);
+    }
+
+    .brand-subtitle {
+      margin: 2px 0 0;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+
+    .telemetry-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0;
+    }
+
+    .metric-cell {
+      padding: 4px 16px;
+      border-left: 1px solid var(--border-hairline);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 108px;
+    }
+
+    .metric-cell:first-child {
+      border-left: none;
+      padding-left: 4px;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .metric-value {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .metric-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent-cyan);
+      border-radius: 999px;
+      transition: width 0.35s var(--ease-out), background-color 0.25s ease;
+    }
+
+    .metric-bar-fill.is-high {
+      background: var(--status-warn);
+    }
+
+    .metric-bar-fill.is-critical {
+      background: var(--status-danger);
+    }
+
+    /* ================================================================
+       BARRA DE ACCIONES DEL SISTEMA
+       ================================================================ */
+    .control-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-lg);
+      padding: 12px 16px;
+    }
+
+    .control-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 8px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.1s ease, opacity 0.18s ease;
+    }
+
+    .btn svg {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: #1c2536;
+      border-color: rgba(226, 232, 240, 0.28);
+    }
+
+    .btn:active:not(:disabled) {
+      transform: translateY(1px) scale(0.985);
+    }
+
+    .btn:focus-visible {
+      outline: 2px solid var(--accent-cyan);
+      outline-offset: 2px;
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent-cyan-dim);
+      border-color: rgba(56, 189, 248, 0.35);
+      color: #e0f2fe;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: rgba(56, 189, 248, 0.22);
+      border-color: rgba(56, 189, 248, 0.55);
+    }
+
+    .btn-danger {
+      background: var(--status-danger-dim);
+      border-color: rgba(244, 63, 94, 0.35);
+      color: #ffe4e6;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(244, 63, 94, 0.24);
+      border-color: rgba(244, 63, 94, 0.6);
+    }
+
+    .btn-danger.confirming {
+      background: var(--status-danger);
+      color: #ffffff;
+      border-color: var(--status-danger);
+    }
+
+    .toast-inline {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toast-inline.is-error {
+      color: var(--status-danger);
+    }
+
+    .toast-inline.is-ok {
+      color: var(--status-ok);
+    }
+
+    /* ================================================================
+       LAYOUT PRINCIPAL ASIMÉTRICO (PILOT COCKPIT)
+       ================================================================ */
+    .main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.38fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .column-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-hairline);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .cockpit-header,
+    .control-bar {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .panel *,
+    .cockpit-header *,
+    .control-bar * {
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .panel-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-title svg {
+      width: 17px;
+      height: 17px;
+      color: var(--accent-cyan);
+    }
+
+    .panel-meta {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    /* ================================================================
+       CHAT DIRECTO DESDE PC
+       ================================================================ */
+    .chat-feed {
+      background: var(--bg-input);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      min-height: 220px;
+      max-height: 310px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .chat-empty {
+      margin: auto;
+      text-align: center;
+      color: var(--text-muted);
+      max-width: 420px;
+      padding: 18px 12px;
+    }
+
+    .chat-empty strong {
+      display: block;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .chat-bubble {
+      padding: 10px 13px;
+      border-radius: var(--radius-md);
+      max-width: 90%;
+      font-size: 13.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: var(--text-primary);
+    }
+
+    .chat-bubble.agent {
+      align-self: flex-start;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+    }
+
+    .chat-bubble.error {
+      align-self: flex-start;
+      background: var(--status-danger-dim);
+      border: 1px solid rgba(244, 63, 94, 0.35);
+      color: #fecdd3;
+    }
+
+    .chat-bubble-meta {
+      margin-top: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .chat-thumb {
+      margin-top: 8px;
+      max-width: 100%;
+      max-height: 170px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      cursor: zoom-in;
+      display: block;
+    }
+
+    .quick-prompts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip-btn {
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-hairline);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .chip-btn:hover {
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--text-primary);
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+
+    .chat-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .chat-input {
+      flex: 1 1 180px;
+      width: 100%;
+      min-width: 0;
+      min-height: 40px;
+      padding: 9px 13px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-input);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13.5px;
+    }
+
+    .chat-form .chat-input,
+    .vault-toolbar .chat-input {
+      width: auto;
+      flex: 1 1 180px;
+    }
+
+    .chat-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .chat-input:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+    }
+
+    .skeleton-line {
+      height: 12px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.04) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite linear;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ================================================================
+       CENTRO MULTI-MONITOR (3 MONITORES EN VIVO)
+       ================================================================ */
+    .monitor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+      gap: 8px;
+    }
+
+    .monitor-option {
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-input);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.1s ease;
+    }
+
+    .monitor-option:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .monitor-option:active {
+      transform: translateY(1px) scale(0.985);
+    }
+
+    .monitor-option.is-selected {
+      border-color: var(--accent-cyan);
+      background: var(--accent-cyan-dim);
+      color: var(--text-primary);
+    }
+
+    .monitor-option-title {
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .monitor-option-sub {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .monitor-preview-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .preview-stage {
+      background: var(--bg-input);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-md);
+      min-height: 210px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+      padding: 10px;
+    }
+
+    .preview-stage img {
+      max-width: 100%;
+      max-height: 310px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      object-fit: contain;
+      cursor: zoom-in;
+    }
+
+    .preview-placeholder {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 20px;
+      font-size: 13px;
+    }
+
+    .preview-error {
+      color: #fda4af;
+      background: var(--status-danger-dim);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 12.5px;
+      max-width: 92%;
+    }
+
+    /* ================================================================
+       ENRUTADOR Y ESTADO DE MODELOS IA
+       ================================================================ */
+    .router-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .router-stat {
+      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      background: var(--bg-input);
+      border: 1px solid var(--border-hairline);
+    }
+
+    .router-stat-label {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+
+    .router-stat-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+
+    .model-list {
+      border-top: 1px solid var(--border-hairline);
+    }
+
+    .model-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 4px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .model-row-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .model-name {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .model-role {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .badge-ok {
+      background: var(--status-ok-dim);
+      color: var(--status-ok);
+    }
+
+    .badge-warn {
+      background: var(--status-warn-dim);
+      color: var(--status-warn);
+    }
+
+    .badge-cyan {
+      background: var(--accent-cyan-dim);
+      color: var(--accent-cyan);
+    }
+
+    .btn-mini {
+      min-height: 28px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      border-radius: var(--radius-sm);
+    }
+
+    .btn-mini.is-active {
+      background: var(--accent-cyan);
+      color: #090c10;
+      border-color: var(--accent-cyan);
+    }
+
+    /* ================================================================
+       LÍNEA DE TIEMPO DE ACTIVIDAD LIMPIA
+       ================================================================ */
+    .timeline-list {
+      max-height: 360px;
+      overflow-y: auto;
+      border-top: 1px solid var(--border-hairline);
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 64px 10px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      padding: 10px 4px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .timeline-time {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      padding-top: 2px;
+    }
+
+    .timeline-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      margin-top: 6px;
+      background: var(--accent-cyan);
+    }
+
+    .timeline-dot.is-ok { background: var(--status-ok); }
+    .timeline-dot.is-warn { background: var(--status-warn); }
+    .timeline-dot.is-error { background: var(--status-danger); }
+
+    .timeline-content {
+      min-width: 0;
+    }
+
+    .timeline-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .timeline-detail {
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      word-break: break-word;
+    }
+
+    /* ================================================================
+       MODAL DE IMAGEN / QR
+       ================================================================ */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(9, 12, 16, 0.86);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 50;
+    }
+
+    .modal-backdrop.is-open {
+      display: flex;
+    }
+
+    .modal-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      max-width: 92vw;
+      max-height: 90vh;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .modal-box img {
+      max-width: 86vw;
+      max-height: 76vh;
+      border-radius: var(--radius-sm);
+      object-fit: contain;
+    }
+
+    .qr-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      background: var(--status-warn-dim);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #fde68a;
+      font-size: 13px;
+    }
+
+    .qr-banner.is-visible {
+      display: flex;
+    }
+
+    /* ================================================================
+       SEGUNDO CEREBRO (SQLITE) & VIGILANTE PROACTIVO (ALERTAS)
+       ================================================================ */
+    .vault-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .vault-form {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      background: var(--bg-input);
+      border: 1px solid var(--border-strong);
+    }
+
+    .vault-form.is-open {
+      display: flex;
+    }
+
+    .vault-form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+
+    .vault-textarea {
+      min-height: 68px;
+      resize: vertical;
+    }
+
+    .vault-list,
+    .alerts-list {
+      max-height: 280px;
+      overflow-y: auto;
+      border-top: 1px solid var(--border-hairline);
+    }
+
+    .vault-item,
+    .alert-item {
+      padding: 10px 4px;
+      border-bottom: 1px solid var(--border-hairline);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .vault-item-head,
+    .alert-item-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .vault-topic {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .vault-body {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .alert-form,
+    .vip-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      align-items: stretch;
+      width: 100%;
+    }
+
+    .alert-form .btn,
+    .vip-form .btn {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .select-input {
+      width: 100%;
+      min-width: 0;
+      min-height: 38px;
+      padding: 7px 10px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-input);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+    }
+
+    .btn-ghost-danger {
+      border-color: transparent;
+      background: transparent;
+      color: var(--text-muted);
+      padding: 3px 7px;
+      min-height: 24px;
+      font-size: 11px;
+    }
+
+    .btn-ghost-danger:hover:not(:disabled) {
+      background: var(--status-danger-dim);
+      color: #fda4af;
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+
+    @media (max-width: 980px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+      .telemetry-strip {
+        width: 100%;
+        padding-top: 8px;
+        border-top: 1px solid var(--border-hairline);
+      }
+      .metric-cell {
+        flex: 1;
+        min-width: 110px;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .app-shell {
+        padding: 12px;
+      }
+      .router-summary {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- HEADER DE ESTADO EN TIEMPO REAL -->
+    <header class="cockpit-header">
+      <div class="brand-status-group">
+        <span id="statusBeacon" class="status-beacon is-syncing" aria-hidden="true"></span>
+        <div class="brand-title-wrap">
+          <h1>
+            Agente UNSA Cockpit
+            <span id="globalStatusBadge" class="status-pill-text">Conectando...</span>
+          </h1>
+          <p id="whatsappDetailLine" class="brand-subtitle">Verificando estado del puente WhatsApp y FastAPI</p>
+        </div>
+      </div>
+
+      <div class="telemetry-strip" aria-label="Telemetría del sistema">
+        <div class="metric-cell">
+          <span class="metric-label"><span>Lima UTC-5</span></span>
+          <span id="limaTime" class="metric-value">--:--:--</span>
+          <span id="limaDate" class="metric-label">----/--/--</span>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-label"><span>CPU</span><span id="cpuText">--%</span></span>
+          <span id="cpuVal" class="metric-value">0.0%</span>
+          <div class="metric-bar"><div id="cpuBar" class="metric-bar-fill"></div></div>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-label"><span>RAM</span><span id="ramGb">-- GB</span></span>
+          <span id="ramVal" class="metric-value">0.0%</span>
+          <div class="metric-bar"><div id="ramBar" class="metric-bar-fill"></div></div>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-label"><span>Batería</span><span id="batState">--</span></span>
+          <span id="batVal" class="metric-value">--%</span>
+          <div class="metric-bar"><div id="batBar" class="metric-bar-fill"></div></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ALERTA QR SI WHATSAPP SOLICITA VINCULACIÓN -->
+    <div id="qrBanner" class="qr-banner" role="alert">
+      <span>WhatsApp solicita vinculación como dispositivo. Revisa la terminal o reinicia el puente si necesitas un QR nuevo.</span>
+      <button type="button" class="btn btn-mini" onclick="restartWhatsApp()">Regenerar QR</button>
+    </div>
+
+    <!-- PANEL DE CONTROL DE SERVICIOS Y MEMORIA -->
+    <section class="control-bar" aria-label="Controles del sistema">
+      <div class="control-actions">
+        <button id="btnRestartWa" type="button" class="btn btn-primary" onclick="restartWhatsApp()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+            <path d="M16 16h5v5" />
+          </svg>
+          Reiniciar Puente WhatsApp
+        </button>
+
+        <button id="btnClearMem" type="button" class="btn" onclick="clearMemory()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M3 6h18" />
+            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+          </svg>
+          Limpiar Memoria de Conversación
+        </button>
+
+        <button id="btnShutdown" type="button" class="btn btn-danger" onclick="handleShutdownClick()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+            <line x1="12" y1="2" x2="12" y2="12" />
+          </svg>
+          <span id="shutdownLabel">Apagar Todo el Sistema</span>
+        </button>
+      </div>
+      <div id="actionFeedback" class="toast-inline" aria-live="polite">
+        Listo para operar
+      </div>
+    </section>
+
+    <!-- CUERPO PRINCIPAL ASIMÉTRICO -->
+    <main class="main-grid">
+      <!-- COLUMNA IZQUIERDA: CHAT DIRECTO PC + MULTI-MONITOR -->
+      <div class="column-stack">
+        <!-- CHAT DIRECTO DESDE LA PC -->
+        <section class="panel" aria-labelledby="chatPanelTitle">
+          <div class="panel-header">
+            <h2 id="chatPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              Chat Directo PC
+            </h2>
+            <span class="panel-meta">Ejecución directa sin teléfono</span>
+          </div>
+
+          <div id="chatFeed" class="chat-feed">
+            <div class="chat-empty">
+              <strong>Consola de órdenes directas</strong>
+              Escribe una instrucción para consultar DUTIC, Classroom, Calendar, leer un PDF local o controlar tus aplicaciones en Brave, VS Code y Antigravity.
+            </div>
+          </div>
+
+          <div class="quick-prompts" aria-label="Comandos rápidos">
+            <button type="button" class="chip-btn" onclick="fillAndSend('¿Cómo está el estado de mi PC?')">Estado de PC</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('Revisa mis eventos pendientes en DUTIC y Classroom')">DUTIC y Classroom</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('¿Qué clases o eventos tengo hoy en mi calendario?')">Horario de hoy</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('Lee y resume el último PDF descargado')">Resumir último PDF</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('Inspecciona mi carpeta Downloads por peso y tipos')">Inspeccionar Descargas</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('¿Qué tengo guardado en mi segundo cerebro?')">Consultar Segundo Cerebro</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('Activa el modo de entorno universidad')">Modo Estudio UNSA</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('Activa el modo cine en el monitor 2')">Modo Cine en TV</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('Usa Gemini Web para crear un pptx de 8 diapositivas sobre Patrón MVC')">Crear PPTX con Gemini</button>
+          </div>
+
+          <form class="chat-form" onsubmit="sendDirectChat(event)">
+            <input
+              id="chatInput"
+              type="text"
+              class="chat-input"
+              placeholder="Escribe una orden para el agente..."
+              autocomplete="off"
+              required
+            />
+            <button id="btnSendChat" type="submit" class="btn btn-primary">
+              Enviar
+            </button>
+          </form>
+        </section>
+
+        <!-- CENTRO MULTI-MONITOR (3 MONITORES) -->
+        <section class="panel" aria-labelledby="monitorPanelTitle">
+          <div class="panel-header">
+            <h2 id="monitorPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="2" y="3" width="20" height="14" rx="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+              Centro Multi-Monitor
+            </h2>
+            <span id="detectedMonitorsMeta" class="panel-meta">Detectando pantallas...</span>
+          </div>
+
+          <div id="monitorSelector" class="monitor-grid" role="radiogroup" aria-label="Selector de monitor predeterminado">
+            <!-- Rellenado dinámicamente -->
+          </div>
+
+          <div class="monitor-preview-toolbar">
+            <button id="btnCapturePreview" type="button" class="btn btn-primary" onclick="capturePreview()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              Capturar y Previsualizar Monitor
+            </button>
+            <span id="previewMeta" class="panel-meta">Sin captura reciente</span>
+          </div>
+
+          <div id="previewStage" class="preview-stage">
+            <div class="preview-placeholder">
+              Selecciona un modo de monitor y pulsa "Capturar y Previsualizar Monitor" para inspeccionar en vivo.
+              <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">
+                Nota de privacidad: las capturas de visión se envían a Google Gemini API (bloqueadas automáticamente si hay ventanas de bancos/gestores visibles; en navegadores solo se evalúa la pestaña activa).
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- FÁBRICA DE ARTEFACTOS (generated_projects/) -->
+        <section class="panel" aria-labelledby="factoryPanelTitle">
+          <div class="panel-header">
+            <h2 id="factoryPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <polyline points="9 15 12 18 15 15" />
+              </svg>
+              Fábrica de Artefactos (generated_projects/)
+            </h2>
+            <span id="factoryCountMeta" class="panel-meta">0 archivos</span>
+          </div>
+
+          <div id="factoryList" class="vault-list">
+            <div class="preview-placeholder">Los archivos .pptx, .xlsx, .pdf y .py creados por el Tridente de IAs Web aparecerán aquí.</div>
+          </div>
+        </section>
+
+        <!-- SEGUNDO CEREBRO PERMANENTE (SQLITE) -->
+        <section class="panel" aria-labelledby="brainPanelTitle">
+          <div class="panel-header">
+            <h2 id="brainPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              </svg>
+              Segundo Cerebro Universitario (SQLite)
+            </h2>
+            <span id="brainCountMeta" class="panel-meta">0 notas guardadas</span>
+          </div>
+
+          <div class="vault-toolbar">
+            <input
+              id="brainSearchInput"
+              type="search"
+              class="chat-input"
+              placeholder="Buscar tema, curso, comando o etiqueta..."
+              oninput="refreshStatus()"
+              aria-label="Buscar en Segundo Cerebro"
+            />
+            <button type="button" class="btn btn-primary" onclick="toggleBrainForm()">
+              Nueva Nota
+            </button>
+          </div>
+
+          <form id="brainForm" class="vault-form" onsubmit="saveBrainNote(event)">
+            <div class="vault-form-row">
+              <input id="brainTopic" type="text" class="chat-input" placeholder="Tema (ej. Proyecto Sistemas)" required />
+              <input id="brainTags" type="text" class="chat-input" placeholder="Etiquetas (ej. universidad, git)" value="universidad" />
+            </div>
+            <textarea id="brainContent" class="chat-input vault-textarea" placeholder="Contenido permanente (links, acuerdos, apuntes, comandos)..." required></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <button type="button" class="btn btn-mini" onclick="toggleBrainForm(false)">Cancelar</button>
+              <button type="submit" class="btn btn-mini btn-primary">Guardar en SQLite</button>
+            </div>
+          </form>
+
+          <div id="brainList" class="vault-list">
+            <div class="preview-placeholder">Cargando notas persistentes...</div>
+          </div>
+        </section>
+      </div>
+
+      <!-- COLUMNA DERECHA: WORKERS PARALELOS + ENRUTADOR IA + VIGILANTE PROACTIVO + LÍNEA DE TIEMPO -->
+      <div class="column-stack">
+        <!-- WORKERS MULTI-AGENTE EN PARALELO (6x POOL) -->
+        <section class="panel" aria-labelledby="workersPanelTitle">
+          <div class="panel-header">
+            <h2 id="workersPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+              </svg>
+              Workers en Paralelo (6x Pool)
+            </h2>
+            <span id="workersCountMeta" class="badge badge-ok">0 / 6 activos</span>
+          </div>
+
+          <div id="workersList" class="alerts-list">
+            <div class="preview-placeholder">Sin órdenes simultáneas en ejecución en este momento.</div>
+          </div>
+        </section>
+
+        <!-- ENRUTADOR Y ESTADO DE MODELOS IA -->
+        <section class="panel" aria-labelledby="routerPanelTitle">
+          <div class="panel-header">
+            <h2 id="routerPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1 1.4 1.09H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              Enrutador de Modelos IA
+            </h2>
+            <button type="button" id="btnAutoMode" class="btn btn-mini" onclick="selectModel('Auto')">
+              Modo Auto
+            </button>
+          </div>
+
+          <div class="router-summary">
+            <div class="router-stat">
+              <div class="router-stat-label">Preferencia activa</div>
+              <div id="forcedModelVal" class="router-stat-val">Auto</div>
+            </div>
+            <div class="router-stat">
+              <div class="router-stat-label">Último modelo que respondió</div>
+              <div id="lastUsedModelVal" class="router-stat-val">Ninguno aún</div>
+            </div>
+          </div>
+
+          <div id="modelList" class="model-list">
+            <!-- Rellenado dinámicamente -->
+          </div>
+        </section>
+
+        <!-- VIGILANTE PROACTIVO Y ALERTAS WHATSAPP -->
+        <section class="panel" aria-labelledby="alertsPanelTitle">
+          <div class="panel-header">
+            <h2 id="alertsPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              Vigilante Proactivo WhatsApp
+            </h2>
+            <span id="alertsCountMeta" class="panel-meta">0 activas</span>
+          </div>
+
+          <form class="alert-form" onsubmit="createAlertFromUI(event)">
+            <select id="alertType" class="select-input" aria-label="Tipo de alerta">
+              <option value="timer">Timer (min / seg / HH:MM)</option>
+              <option value="dutic_check">Briefing DUTIC 24h</option>
+              <option value="process_finished">Fin de proceso PC</option>
+              <option value="battery_low">Batería baja (%)</option>
+            </select>
+            <input id="alertTarget" type="text" class="chat-input" placeholder="Ej. 10m o python" value="5m" />
+            <input id="alertMessage" type="text" class="chat-input" placeholder="Mensaje en WhatsApp..." />
+            <button type="submit" class="btn btn-primary btn-mini">Activar</button>
+          </form>
+
+          <div id="alertsList" class="alerts-list">
+            <div class="preview-placeholder">Sin alertas configuradas todavía.</div>
+          </div>
+        </section>
+
+        <!-- CONTACTOS RÁPIDOS VIP (WHATSAPP) -->
+        <section class="panel" aria-labelledby="vipContactsPanelTitle">
+          <div class="panel-header">
+            <h2 id="vipContactsPanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              Contactos Rápidos VIP (WhatsApp)
+            </h2>
+            <span id="vipContactsMeta" class="panel-meta">0 guardados</span>
+          </div>
+
+          <form class="vip-form" onsubmit="saveVipContactFromUI(event)">
+            <input id="vipName" type="text" class="chat-input" placeholder="Alias (ej. Papá, Mamá)" required />
+            <input id="vipPhone" type="text" class="chat-input" placeholder="Teléfono (ej. 519XXXXXXXX)" required />
+            <button type="submit" class="btn btn-primary btn-mini">Guardar Contacto</button>
+          </form>
+
+          <div id="vipContactsList" class="alerts-list">
+            <div class="preview-placeholder">Sin contactos VIP registrados todavía.</div>
+          </div>
+        </section>
+
+        <!-- LÍNEA DE TIEMPO DE ACTIVIDAD LIMPIA -->
+        <section class="panel" aria-labelledby="timelinePanelTitle">
+          <div class="panel-header">
+            <h2 id="timelinePanelTitle" class="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              Línea de Tiempo en Vivo
+            </h2>
+            <span id="timelineCount" class="panel-meta">0 eventos</span>
+          </div>
+
+          <div id="timelineList" class="timeline-list">
+            <div class="preview-placeholder">Cargando eventos del sistema...</div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL DE ZOOM DE CAPTURA -->
+  <div id="imageModal" class="modal-backdrop" role="dialog" aria-modal="true" onclick="closeImageModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <span id="modalCaption" class="panel-meta">Vista ampliada</span>
+        <button type="button" class="btn btn-mini" onclick="closeImageModal()">Cerrar</button>
+      </div>
+      <img id="modalImg" src="" alt="Captura ampliada del monitor" />
+    </div>
+  </div>
+
+  <script>
+    let currentMonitorMode = 0;
+    let shutdownPendingConfirm = false;
+    let shutdownTimer = null;
+    let serverOffline = false;
+
+    function setFeedback(text, kind = "") {
+      const el = document.getElementById("actionFeedback");
+      el.textContent = text;
+      el.className = "toast-inline" + (kind ? ` is-${kind}` : "");
+    }
+
+    function setBarState(barId, pct) {
+      const bar = document.getElementById(barId);
+      const val = Math.max(0, Math.min(100, Number(pct) || 0));
+      bar.style.width = `${val}%`;
+      bar.classList.remove("is-high", "is-critical");
+      if (val >= 88) bar.classList.add("is-critical");
+      else if (val >= 70) bar.classList.add("is-high");
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderMonitorOptions(monitorsData) {
+      const container = document.getElementById("monitorSelector");
+      const metaEl = document.getElementById("detectedMonitorsMeta");
+      const detected = monitorsData.detected || [];
+      currentMonitorMode = Number(monitorsData.default_mode ?? 0);
+
+      metaEl.textContent = `${detected.length} monitor(es) físico(s) en vivo`;
+
+      const options = [
+        { mode: 0, title: "Auto (Ventana Activa)", sub: "Sigue app o ventana enfocada" },
+      ];
+
+      for (const mon of detected) {
+        const title = mon.name || (mon.id === 1 ? "Monitor 1 (Laptop)" : mon.id === 2 ? "Monitor 2 (TV / Externo)" : `Monitor ${mon.id}`);
+        const sub = `${mon.width}x${mon.height}${mon.is_primary ? " · Principal" : ""}`;
+        options.push({ mode: Number(mon.id), title, sub });
+      }
+      options.push({ mode: -1, title: "Panorámica Total", sub: "Todos los monitores conectados" });
+
+      container.innerHTML = options.map((opt) => {
+        const selected = opt.mode === currentMonitorMode ? " is-selected" : "";
+        const mark = opt.mode === currentMonitorMode ? '<span class="badge badge-cyan">Activo</span>' : "";
+        return `
+          <button type="button" class="monitor-option${selected}" onclick="selectMonitor(${opt.mode})">
+            <span class="monitor-option-title">${escapeHtml(opt.title)} ${mark}</span>
+            <span class="monitor-option-sub">${escapeHtml(opt.sub)}</span>
+          </button>
+        `;
+      }).join("");
+    }
+
+    function renderWorkers(workersData) {
+      const container = document.getElementById("workersList");
+      const meta = document.getElementById("workersCountMeta");
+      const maxW = Number(workersData.max_workers || 6);
+      const active = workersData.active || [];
+      const recent = workersData.recent || [];
+
+      meta.textContent = `${active.length} / ${maxW} activos`;
+      meta.className = active.length > 0 ? "badge badge-cyan" : "badge badge-ok";
+
+      const items = [...active, ...recent.slice(0, 6)];
+      if (!items.length) {
+        container.innerHTML = `<div class="preview-placeholder">Sin tareas recientes en el pool multi-worker (6 hilos listos).</div>`;
+        return;
+      }
+
+      container.innerHTML = items.map((w) => {
+        const isRunning = w.status === "running";
+        const badge = isRunning
+          ? `<span class="badge badge-cyan">En curso (${escapeHtml(w.elapsed_s)}s)</span>`
+          : w.status === "done"
+            ? `<span class="badge badge-ok">Listo (${escapeHtml(w.duration_ms)} ms)</span>`
+            : `<span class="badge" style="background:var(--status-danger-dim);color:var(--status-danger);">Error</span>`;
+        const modelChip = w.model ? `<span class="panel-meta">${escapeHtml(w.model)}</span>` : "";
+        return `
+          <div class="alert-item">
+            <div class="alert-item-head">
+              <div class="vault-topic">
+                <span>${escapeHtml(w.task_id)} · ${escapeHtml(w.source || "whatsapp")}</span>
+                ${badge}
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                ${modelChip}
+                <span class="panel-meta">${escapeHtml(w.finished_at || w.started_at || "")}</span>
+              </div>
+            </div>
+            <div class="vault-body">${escapeHtml(w.preview || "(sin descripción)")}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderGeneratedProjects(items) {
+      const container = document.getElementById("factoryList");
+      const meta = document.getElementById("factoryCountMeta");
+      meta.textContent = `${items.length} archivo(s)`;
+
+      if (!items.length) {
+        container.innerHTML = `<div class="preview-placeholder">Aún no hay archivos en generated_projects/. Pide por WhatsApp o Chat crear una presentación .pptx, Excel o script.</div>`;
+        return;
+      }
+
+      container.innerHTML = items.map((item) => {
+        const dlUrl = `/api/generated-files/download?rel_path=${encodeURIComponent(item.rel_path)}`;
+        return `
+          <div class="vault-item">
+            <div class="vault-item-head">
+              <div class="vault-topic">
+                <span class="badge badge-cyan">${escapeHtml(item.ext.replace(".", "").toUpperCase())}</span>
+                <span>${escapeHtml(item.name)}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="panel-meta">${escapeHtml(item.size_label)}</span>
+                <a class="btn btn-mini" style="text-decoration:none;" href="${dlUrl}" download="${escapeHtml(item.name)}">Descargar</a>
+              </div>
+            </div>
+            <div class="panel-meta">${escapeHtml(item.folder)} · ${escapeHtml(item.modified_at)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderModels(modelsData) {
+      const forced = modelsData.forced_mode || "Auto";
+      const lastUsed = modelsData.last_used_model || "Ninguno aún";
+      const cooldowns = modelsData.cooldowns || {};
+      const capabilities = modelsData.capabilities || {};
+      const discardedSet = new Set(modelsData.discarded_models || []);
+      const fastSet = new Set(modelsData.fast_queue || []);
+      const complexSet = new Set(modelsData.complex_queue || []);
+      const allModels = modelsData.all_models || [];
+
+      document.getElementById("forcedModelVal").textContent = forced;
+      document.getElementById("lastUsedModelVal").textContent = lastUsed;
+
+      const btnAuto = document.getElementById("btnAutoMode");
+      btnAuto.className = "btn btn-mini" + (forced === "Auto" ? " is-active" : "");
+
+      const listEl = document.getElementById("modelList");
+      listEl.innerHTML = allModels.map((model) => {
+        const roles = [];
+        if (fastSet.has(model)) roles.push("Rápido");
+        if (complexSet.has(model)) roles.push("Complejo");
+
+        const cdSec = cooldowns[model];
+        const isLast = model === lastUsed;
+        const isForced = model === forced;
+        const isDiscarded = discardedSet.has(model);
+        const capInfo = capabilities[model] || {};
+        const mmMode = capInfo.multimodal_tool_response || "";
+
+        let statusBadge = `<span class="badge badge-ok">Vivo</span>`;
+        if (isDiscarded) {
+          statusBadge = `<span class="badge" style="background:var(--status-danger-dim);color:var(--status-danger);">Descartado (404)</span>`;
+        } else if (cdSec) {
+          statusBadge = `<span class="badge badge-warn">Cooldown 429 (${cdSec}s)</span>`;
+        }
+        const lastBadge = isLast ? `<span class="badge badge-cyan">Último usado</span>` : "";
+        const mmBadge = mmMode
+          ? `<span class="badge badge-cyan">${mmMode === "same_content" ? "MM: mismo turno" : "MM: separado"}</span>`
+          : "";
+
+        return `
+          <div class="model-row">
+            <div class="model-row-info">
+              <div class="model-name">
+                <span>${escapeHtml(model)}</span>
+                ${statusBadge}
+                ${mmBadge}
+                ${lastBadge}
+              </div>
+              <div class="model-role">Cola: ${roles.join(" · ") || (isDiscarded ? "Excluido en inicio" : "Respaldo")}</div>
+            </div>
+            <button
+              type="button"
+              class="btn btn-mini${isForced ? " is-active" : ""}"
+              ${isDiscarded ? "disabled" : ""}
+              onclick="selectModel('${escapeHtml(model)}')"
+            >
+              ${isForced ? "Fijado" : isDiscarded ? "404" : "Usar"}
+            </button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderTimeline(events) {
+      const container = document.getElementById("timelineList");
+      document.getElementById("timelineCount").textContent = `${events.length} eventos`;
+
+      if (!events.length) {
+        container.innerHTML = `<div class="preview-placeholder">Sin actividad registrada todavía.</div>`;
+        return;
+      }
+
+      container.innerHTML = events.map((ev) => {
+        const dotClass = ev.status === "error" ? "is-error" : ev.status === "warn" ? "is-warn" : "is-ok";
+        const modelTag = ev.model ? `<span class="badge badge-cyan">${escapeHtml(ev.model)}</span>` : "";
+        const durTag = ev.duration_ms ? `<span class="panel-meta">${ev.duration_ms} ms</span>` : "";
+        return `
+          <div class="timeline-item">
+            <span class="timeline-time">${escapeHtml(ev.time)}</span>
+            <span class="timeline-dot ${dotClass}"></span>
+            <div class="timeline-content">
+              <div class="timeline-title">
+                <span>${escapeHtml(ev.title)}</span>
+                ${modelTag}
+                ${durTag}
+              </div>
+              ${ev.detail ? `<div class="timeline-detail">${escapeHtml(ev.detail)}</div>` : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderSecondBrain(notes) {
+      const container = document.getElementById("brainList");
+      const meta = document.getElementById("brainCountMeta");
+      meta.textContent = `${notes.length} nota(s)`;
+
+      if (!notes.length) {
+        container.innerHTML = `<div class="preview-placeholder">No hay notas que coincidan todavía. Pulsa "Nueva Nota" o guarda algo desde WhatsApp.</div>`;
+        return;
+      }
+
+      container.innerHTML = notes.map((n) => `
+        <div class="vault-item">
+          <div class="vault-item-head">
+            <div class="vault-topic">
+              <span>#${n.id} · ${escapeHtml(n.topic)}</span>
+              <span class="badge badge-cyan">${escapeHtml(n.tags)}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="panel-meta">${escapeHtml(n.created_at)}</span>
+              <button type="button" class="btn btn-ghost-danger" onclick="deleteBrainNote(${n.id})">Eliminar</button>
+            </div>
+          </div>
+          <div class="vault-body">${escapeHtml(n.content)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderAlerts(alerts) {
+      const container = document.getElementById("alertsList");
+      const meta = document.getElementById("alertsCountMeta");
+      const activeCount = alerts.filter((a) => a.status === "active").length;
+      meta.textContent = `${activeCount} activa(s) · ${alerts.length} total`;
+
+      if (!alerts.length) {
+        container.innerHTML = `<div class="preview-placeholder">Sin vigilantes programados. Crea un recordatorio, revisión DUTIC 24h o alerta de batería/proceso.</div>`;
+        return;
+      }
+
+      const statusMap = {
+        active: `<span class="badge badge-cyan">Vigilando</span>`,
+        triggered: `<span class="badge badge-ok">Enviada a WA</span>`,
+        cancelled: `<span class="badge badge-warn">Cancelada</span>`,
+        failed: `<span class="badge" style="background:var(--status-danger-dim);color:var(--status-danger);">Error</span>`,
+      };
+
+      container.innerHTML = alerts.map((a) => {
+        const badge = statusMap[a.status] || `<span class="badge">${escapeHtml(a.status)}</span>`;
+        const cancelBtn = a.status === "active"
+          ? `<button type="button" class="btn btn-ghost-danger" onclick="cancelAlertFromUI(${a.id})">Cancelar</button>`
+          : `<span class="panel-meta">${escapeHtml(a.triggered_at || a.created_at)}</span>`;
+        return `
+          <div class="alert-item">
+            <div class="alert-item-head">
+              <div class="vault-topic">
+                <span>#${a.id} · ${escapeHtml(a.condition_type)}</span>
+                ${badge}
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="panel-meta">${escapeHtml(a.detail)}</span>
+                ${cancelBtn}
+              </div>
+            </div>
+            <div class="vault-body">${escapeHtml(a.message)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function toggleBrainForm(forceState) {
+      const form = document.getElementById("brainForm");
+      if (typeof forceState === "boolean") {
+        form.classList.toggle("is-open", forceState);
+      } else {
+        form.classList.toggle("is-open");
+      }
+      if (form.classList.contains("is-open")) {
+        document.getElementById("brainTopic").focus();
+      }
+    }
+
+    async function saveBrainNote(event) {
+      event.preventDefault();
+      const topicEl = document.getElementById("brainTopic");
+      const tagsEl = document.getElementById("brainTags");
+      const contentEl = document.getElementById("brainContent");
+
+      try {
+        const resp = await fetch("/api/brain/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topic: topicEl.value.trim(),
+            tags: tagsEl.value.trim() || "universidad",
+            content: contentEl.value.trim(),
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+        topicEl.value = "";
+        contentEl.value = "";
+        toggleBrainForm(false);
+        setFeedback(`Nota guardada en SQLite: ${data.note.topic}`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al guardar nota: ${err.message}`, "error");
+      }
+    }
+
+    async function deleteBrainNote(noteId) {
+      try {
+        const resp = await fetch(`/api/brain/${noteId}`, { method: "DELETE" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        setFeedback(`Nota #${noteId} eliminada`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al eliminar nota: ${err.message}`, "error");
+      }
+    }
+
+    async function createAlertFromUI(event) {
+      event.preventDefault();
+      const typeEl = document.getElementById("alertType");
+      const targetEl = document.getElementById("alertTarget");
+      const msgEl = document.getElementById("alertMessage");
+
+      try {
+        const resp = await fetch("/api/alerts/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            condition_type: typeEl.value,
+            target_value: targetEl.value.trim(),
+            message: msgEl.value.trim() || "Alerta automática desde Dashboard",
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+        msgEl.value = "";
+        setFeedback(`Vigilante #${data.alert.id} activado (${data.alert.detail})`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al crear alerta: ${err.message}`, "error");
+      }
+    }
+
+    async function cancelAlertFromUI(alertId) {
+      try {
+        const resp = await fetch(`/api/alerts/${alertId}`, { method: "DELETE" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        setFeedback(`Alerta #${alertId} cancelada`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al cancelar alerta: ${err.message}`, "error");
+      }
+    }
+
+    function renderVipContacts(contacts) {
+      const container = document.getElementById("vipContactsList");
+      const meta = document.getElementById("vipContactsMeta");
+      if (!container || !meta) return;
+
+      meta.textContent = `${contacts.length} guardado(s)`;
+      if (!contacts.length) {
+        container.innerHTML = `<div class="preview-placeholder">Guarda alias como "Papá" o "Mamá" para enviarles WhatsApp con solo decir su nombre.</div>`;
+        return;
+      }
+
+      container.innerHTML = contacts.map((c) => {
+        const vipBadge = c.vip
+          ? `<span class="badge badge-ok">VIP</span>`
+          : `<span class="badge badge-cyan">Sync</span>`;
+        return `
+          <div class="alert-item">
+            <div class="alert-item-head">
+              <div class="vault-topic">
+                <span>${escapeHtml(c.name || c.phone)}</span>
+                ${vipBadge}
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                ${c.phone ? `<span class="panel-meta">+${escapeHtml(c.phone)}</span>` : ""}
+                <button type="button" class="btn btn-mini" onclick="prefillVipWhatsApp('${escapeHtml(c.name || c.phone)}')">Redactar</button>
+                <button type="button" class="btn btn-ghost-danger" onclick="deleteVipContactFromUI('${escapeHtml(c.jid)}')">Eliminar</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function prefillVipWhatsApp(contactName) {
+      const input = document.getElementById("chatInput");
+      if (!input) return;
+      input.value = `Envíale un WhatsApp a ${contactName} diciendo: `;
+      input.focus();
+    }
+
+    async function saveVipContactFromUI(event) {
+      event.preventDefault();
+      const nameEl = document.getElementById("vipName");
+      const phoneEl = document.getElementById("vipPhone");
+
+      try {
+        const resp = await fetch("/api/whatsapp/contacts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: nameEl.value.trim(),
+            phone: phoneEl.value.trim(),
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+        nameEl.value = "";
+        phoneEl.value = "";
+        setFeedback(`Contacto VIP guardado: ${data.contact.name} (+${data.contact.phone})`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al guardar contacto: ${err.message}`, "error");
+      }
+    }
+
+    async function deleteVipContactFromUI(jid) {
+      try {
+        const resp = await fetch(`/api/whatsapp/contacts/${encodeURIComponent(jid)}`, { method: "DELETE" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        setFeedback("Contacto eliminado de la agenda", "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al eliminar contacto: ${err.message}`, "error");
+      }
+    }
+
+    async function refreshStatus() {
+      if (serverOffline) return;
+      try {
+        const brainQ = (document.getElementById("brainSearchInput")?.value || "").trim();
+        const url = brainQ ? `/api/status?brain_q=${encodeURIComponent(brainQ)}` : "/api/status";
+        const resp = await fetch(url, { cache: "no-store" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        const beacon = document.getElementById("statusBeacon");
+        const badge = document.getElementById("globalStatusBadge");
+        const detail = document.getElementById("whatsappDetailLine");
+
+        if (data.global_status === "active") {
+          beacon.className = "status-beacon is-active";
+          badge.className = "status-pill-text is-active";
+          badge.textContent = "Agente UNSA Activo";
+        } else if (data.global_status === "syncing") {
+          beacon.className = "status-beacon is-syncing";
+          badge.className = "status-pill-text";
+          badge.textContent = "Sincronizando WhatsApp";
+        } else {
+          beacon.className = "status-beacon is-stopped";
+          badge.className = "status-pill-text is-stopped";
+          badge.textContent = "Detenido";
+        }
+
+        detail.textContent = `WhatsApp: ${data.whatsapp?.detail || data.whatsapp?.status || "--"}`;
+
+        const qrBanner = document.getElementById("qrBanner");
+        if (data.whatsapp?.status === "qr") {
+          qrBanner.classList.add("is-visible");
+        } else {
+          qrBanner.classList.remove("is-visible");
+        }
+
+        document.getElementById("limaTime").textContent = data.lima?.time || "--:--:--";
+        document.getElementById("limaDate").textContent = data.lima?.date || "--";
+
+        const tel = data.telemetry || {};
+        document.getElementById("cpuVal").textContent = `${tel.cpu_percent ?? 0}%`;
+        document.getElementById("cpuText").textContent = "Uso";
+        setBarState("cpuBar", tel.cpu_percent ?? 0);
+
+        document.getElementById("ramVal").textContent = `${tel.ram_percent ?? 0}%`;
+        document.getElementById("ramGb").textContent = `${tel.ram_used_gb ?? 0}/${tel.ram_total_gb ?? 0} GB`;
+        setBarState("ramBar", tel.ram_percent ?? 0);
+
+        const bat = tel.battery || {};
+        if (bat.available && bat.percent !== null) {
+          document.getElementById("batVal").textContent = `${bat.percent}%`;
+          document.getElementById("batState").textContent = bat.plugged ? "AC" : "Bat";
+          setBarState("batBar", bat.percent);
+        } else {
+          document.getElementById("batVal").textContent = "AC";
+          document.getElementById("batState").textContent = "Directo";
+          setBarState("batBar", 100);
+        }
+
+        renderMonitorOptions(data.monitors || {});
+        renderWorkers(data.workers || {});
+        renderGeneratedProjects(data.generated_projects || []);
+        renderModels(data.models || {});
+        renderSecondBrain(data.second_brain || []);
+        renderAlerts(data.alerts || []);
+        renderVipContacts(data.whatsapp_contacts || []);
+        renderTimeline(data.activity || []);
+      } catch {
+        const beacon = document.getElementById("statusBeacon");
+        const badge = document.getElementById("globalStatusBadge");
+        beacon.className = "status-beacon is-stopped";
+        badge.className = "status-pill-text is-stopped";
+        badge.textContent = "Sin conexión";
+        document.getElementById("whatsappDetailLine").textContent = "Servidor FastAPI no responde en el puerto 8000";
+      }
+    }
+
+    async function selectMonitor(mode) {
+      try {
+        const resp = await fetch("/api/monitor/select", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+        const data = await resp.json();
+        setFeedback(`Monitor predeterminado: ${data.label || mode}`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al cambiar monitor: ${err.message}`, "error");
+      }
+    }
+
+    async function capturePreview() {
+      const btn = document.getElementById("btnCapturePreview");
+      const stage = document.getElementById("previewStage");
+      const meta = document.getElementById("previewMeta");
+
+      btn.disabled = true;
+      stage.innerHTML = `<div style="width:80%;display:flex;flex-direction:column;gap:10px;"><div class="skeleton-line" style="width:55%"></div><div class="skeleton-line" style="height:130px"></div></div>`;
+
+      try {
+        const resp = await fetch("/api/monitor/capture", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ monitor_number: currentMonitorMode }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+          stage.innerHTML = `<div class="preview-error">${escapeHtml(data.error || "Fallo en captura")}</div>`;
+          meta.textContent = "Captura fallida";
+          return;
+        }
+        const src = data.image_data_url || data.image_url;
+        meta.textContent = `${data.label} · ${data.width}x${data.height}`;
+        stage.innerHTML = "";
+        const previewImg = document.createElement("img");
+        previewImg.src = src;
+        previewImg.alt = data.label || "Captura de monitor";
+        previewImg.addEventListener("click", () => openImageModal(src, data.label));
+        stage.appendChild(previewImg);
+        setFeedback(`Captura lista (${data.label})`, "ok");
+        refreshStatus();
+      } catch (err) {
+        stage.innerHTML = `<div class="preview-error">Error de red al capturar pantalla: ${escapeHtml(err.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function selectModel(model) {
+      try {
+        const resp = await fetch("/model", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model }),
+        });
+        const data = await resp.json();
+        setFeedback(`Modo de modelo actualizado: ${data.active_model_mode}`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al seleccionar modelo: ${err.message}`, "error");
+      }
+    }
+
+    async function restartWhatsApp() {
+      const btn = document.getElementById("btnRestartWa");
+      btn.disabled = true;
+      setFeedback("Reiniciando puente de WhatsApp...");
+      try {
+        const resp = await fetch("/api/whatsapp/restart", { method: "POST" });
+        const data = await resp.json();
+        setFeedback(`Puente reiniciado (PID ${data.pid})`, "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al reiniciar puente: ${err.message}`, "error");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function clearMemory() {
+      const btn = document.getElementById("btnClearMem");
+      btn.disabled = true;
+      try {
+        await fetch("/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sender: "default" }),
+        });
+        await fetch("/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sender: "dashboard" }),
+        });
+        document.getElementById("chatFeed").innerHTML = `
+          <div class="chat-empty">
+            <strong>Memoria de conversación limpiada</strong>
+            El contexto previo se reinició tanto para WhatsApp como para el chat de PC.
+          </div>`;
+        setFeedback("Memoria limpiada en WhatsApp y Dashboard", "ok");
+        await refreshStatus();
+      } catch (err) {
+        setFeedback(`Error al limpiar memoria: ${err.message}`, "error");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function handleShutdownClick() {
+      const btn = document.getElementById("btnShutdown");
+      const label = document.getElementById("shutdownLabel");
+
+      if (!shutdownPendingConfirm) {
+        shutdownPendingConfirm = true;
+        btn.classList.add("confirming");
+        label.textContent = "Confirmar Apagado Total";
+        setFeedback("Pulsa de nuevo en menos de 5s para confirmar el apagado", "error");
+        clearTimeout(shutdownTimer);
+        shutdownTimer = setTimeout(() => {
+          shutdownPendingConfirm = false;
+          btn.classList.remove("confirming");
+          label.textContent = "Apagar Todo el Sistema";
+          setFeedback("Apagado cancelado");
+        }, 5000);
+        return;
+      }
+
+      clearTimeout(shutdownTimer);
+      btn.disabled = true;
+      label.textContent = "Apagando sistema...";
+      serverOffline = true;
+      try {
+        await fetch("/system/shutdown", { method: "POST" });
+      } catch {
+        // El servidor cierra el socket al terminar
+      }
+      document.getElementById("statusBeacon").className = "status-beacon is-stopped";
+      const badge = document.getElementById("globalStatusBadge");
+      badge.className = "status-pill-text is-stopped";
+      badge.textContent = "Detenido";
+      document.getElementById("whatsappDetailLine").textContent = "Sistema apagado. Puedes cerrar esta ventana.";
+      setFeedback("Puente WhatsApp y servidor FastAPI detenidos", "ok");
+    }
+
+    function appendChatBubble(role, text, meta = "", imgUrl = "") {
+      const feed = document.getElementById("chatFeed");
+      const empty = feed.querySelector(".chat-empty");
+      if (empty) empty.remove();
+
+      const div = document.createElement("div");
+      div.className = `chat-bubble ${role}`;
+      div.textContent = text;
+
+      if (imgUrl) {
+        const img = document.createElement("img");
+        img.src = imgUrl;
+        img.className = "chat-thumb";
+        img.alt = "Captura generada por el agente";
+        img.onclick = () => openImageModal(imgUrl, "Captura generada desde Chat PC");
+        div.appendChild(img);
+      }
+
+      if (meta) {
+        const m = document.createElement("div");
+        m.className = "chat-bubble-meta";
+        m.textContent = meta;
+        div.appendChild(m);
+      }
+
+      feed.appendChild(div);
+      feed.scrollTop = feed.scrollHeight;
+      return div;
+    }
+
+    function fillAndSend(text) {
+      const input = document.getElementById("chatInput");
+      input.value = text;
+      sendDirectChat({ preventDefault: () => {} });
+    }
+
+    async function sendDirectChat(event) {
+      event.preventDefault();
+      const input = document.getElementById("chatInput");
+      const btn = document.getElementById("btnSendChat");
+      const message = input.value.trim();
+      if (!message) return;
+
+      input.value = "";
+      appendChatBubble("user", message);
+
+      const feed = document.getElementById("chatFeed");
+      const loadingEl = document.createElement("div");
+      loadingEl.className = "chat-bubble agent";
+      loadingEl.style.width = "72%";
+      loadingEl.innerHTML = `<div class="skeleton-line" style="width:90%;margin-bottom:8px;"></div><div class="skeleton-line" style="width:60%;"></div>`;
+      feed.appendChild(loadingEl);
+      feed.scrollTop = feed.scrollHeight;
+
+      btn.disabled = true;
+      setFeedback("Procesando orden con Gemini...");
+
+      try {
+        const resp = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message,
+            sender: "dashboard",
+            source: "dashboard",
+          }),
+        });
+        const data = await resp.json();
+        loadingEl.remove();
+
+        if (!resp.ok) {
+          appendChatBubble("error", data.detail || `Error HTTP ${resp.status}`);
+          setFeedback("Error al procesar orden", "error");
+          return;
+        }
+
+        let imgUrl = "";
+        if (Array.isArray(data.images) && data.images.length > 0) {
+          const filename = data.images[0].split(/[\\/]/).pop();
+          if (filename) imgUrl = `/api/preview-image?name=${encodeURIComponent(filename)}`;
+        }
+        const filesNote = Array.isArray(data.files) && data.files.length > 0
+          ? `Archivos adjuntos: ${data.files.map((f) => f.split(/[\\/]/).pop()).join(", ")}`
+          : "";
+        const metaParts = [];
+        if (data.model) metaParts.push(data.model);
+        if (data.duration_ms) metaParts.push(`${data.duration_ms} ms`);
+        if (filesNote) metaParts.push(filesNote);
+
+        appendChatBubble("agent", data.reply || "Completado.", metaParts.join(" · "), imgUrl);
+        setFeedback(`Orden respondida con ${data.model || "Gemini"}`, "ok");
+        refreshStatus();
+      } catch (err) {
+        loadingEl.remove();
+        appendChatBubble("error", `No se pudo contactar al backend: ${err.message}`);
+        setFeedback(`Error de conexión: ${err.message}`, "error");
+      } finally {
+        btn.disabled = false;
+        input.focus();
+      }
+    }
+
+    function openImageModal(src, caption) {
+      document.getElementById("modalImg").src = src;
+      document.getElementById("modalCaption").textContent = caption || "Vista ampliada";
+      document.getElementById("imageModal").classList.add("is-open");
+    }
+
+    function closeImageModal() {
+      document.getElementById("imageModal").classList.remove("is-open");
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeImageModal();
+    });
+
+    refreshStatus();
+    setInterval(refreshStatus, 2500);
+  </script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+# Entornos virtuales y caché de Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Dependencias de Node.js
+whatsapp_bridge/node_modules/
+
+# Datos de sesión y caché de WhatsApp
+whatsapp_bridge/auth_info_baileys/
+whatsapp_bridge/processed_messages.json
+whatsapp_bridge/contacts_cache.json
+
+# Bases de datos locales
+agent_core/memory_vault.db*
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Secretos, variables de entorno y credenciales
+.env
+.env.*
+!.env.example
+credentials.json
+client_secret*.json
+token.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs, archivos temporales y proyectos generados
+*.log
+temp/*
+!temp/.gitkeep
+generated_projects/
+
+# Carpetas locales de skills/configuración del IDE
+.agent/
+.agents/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
