@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agente UNSA — Cockpit de Control</title>
+  <title>Vortex AI Desktop</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -80,9 +80,9 @@
     }
 
     /* ================================================================
-       HEADER COCKPIT (ESTADO EN VIVO + RELOJ LIMA + TELEMETRÍA)
+       CABECERA VORTEX AI DESKTOP (ESTADO EN VIVO + RELOJ LIMA + TELEMETRÍA)
        ================================================================ */
-    .cockpit-header {
+    .desktop-header {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
@@ -366,7 +366,7 @@
     }
 
     /* ================================================================
-       LAYOUT PRINCIPAL ASIMÉTRICO (PILOT COCKPIT)
+       LAYOUT PRINCIPAL ASIMÉTRICO (VORTEX AI DESKTOP)
        ================================================================ */
     .main-grid {
       display: grid;
@@ -396,7 +396,7 @@
       overflow: hidden;
     }
 
-    .cockpit-header,
+    .desktop-header,
     .control-bar {
       min-width: 0;
       max-width: 100%;
@@ -404,7 +404,7 @@
     }
 
     .panel *,
-    .cockpit-header *,
+    .desktop-header *,
     .control-bar * {
       min-width: 0;
       max-width: 100%;
@@ -1063,23 +1063,87 @@
         grid-template-columns: 1fr;
       }
     }
+    :root {
+      color-scheme:light;
+      --bg-canvas:#f2f5fa; --bg-panel:#ffffff; --bg-elevated:#f6f8fc; --bg-input:#f8fafc;
+      --border-hairline:#e3e9f2; --border-strong:#cbd5e1;
+      --text-primary:#18243b; --text-secondary:#53647e; --text-muted:#65758e;
+      --accent-cyan:#2563eb; --accent-cyan-dim:#edf3ff;
+      --status-ok:#087c61; --status-ok-dim:#e7f6ef;
+      --status-warn:#986200; --status-warn-dim:#fff4d6;
+      --status-danger:#bf3650; --status-danger-dim:#fcecf0;
+      --radius-lg:20px; --radius-md:12px;
+      --font-display:"Plus Jakarta Sans",system-ui,sans-serif;
+    }
+    :root[data-theme="dark"] {
+      color-scheme:dark;
+      --bg-canvas:#0c1220; --bg-panel:#141e30; --bg-elevated:#1a2940; --bg-input:#101a2b;
+      --border-hairline:#26354b; --border-strong:#3d506b;
+      --text-primary:#edf3ff; --text-secondary:#acbbd1; --text-muted:#92a3be;
+      --accent-cyan:#7eacff; --accent-cyan-dim:#223653;
+      --status-ok:#5bd3ac; --status-ok-dim:#193d37;
+      --status-warn:#f4c56b; --status-warn-dim:#46391f;
+      --status-danger:#ff8ca4; --status-danger-dim:#462739;
+    }
+    body::before {display:none}
+    .app-shell {max-width:1600px;padding:28px 32px;gap:22px}
+    .desktop-header {padding:24px 26px;box-shadow:0 4px 24px #10244b06}
+    .brand-title-wrap h1 {font-size:23px;letter-spacing:-.8px}
+    .panel {box-shadow:0 3px 16px #10244b04;padding:24px;border-radius:20px}
+    .panel-header {padding-bottom:16px;margin-bottom:18px}
+    .panel-title {font-size:15px}
+    .control-bar {padding:16px 20px;background:var(--bg-panel)}
+    .btn {border-radius:10px;min-height:36px;font-weight:600}
+    .btn,.monitor-option {background:var(--bg-elevated);color:var(--text-primary)}
+    .btn:hover:not(:disabled) {background:var(--bg-input);border-color:var(--border-strong)}
+    .btn-primary:hover:not(:disabled) {background:var(--accent-cyan-dim);color:var(--accent-cyan)}
+    .btn-danger:hover:not(:disabled) {background:var(--status-danger-dim);color:var(--status-danger)}
+    .btn.is-active {background:var(--accent-cyan);color:var(--bg-panel)}
+    .btn-primary,.btn-primary:hover {color:var(--accent-cyan);background:var(--accent-cyan-dim);border-color:var(--border-strong)}
+    .btn-danger,.btn-danger:hover {color:var(--status-danger);background:var(--status-danger-dim)}
+    .metric-bar {background:var(--border-hairline);height:5px}
+    input,select,textarea {color:var(--text-primary);border-color:var(--border-strong)}
+    .model-row {padding:18px 0;align-items:flex-start}
+    .model-row-info {flex:1;min-width:0}
+    .model-name {font-family:var(--font-sans);font-size:12px;overflow-wrap:anywhere}
+    .model-role {margin-top:6px}
+    .quota-block {margin-top:12px}
+    .quota-label {display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--text-secondary)}
+    .quota-track {height:6px;background:var(--border-hairline);border-radius:20px;overflow:hidden;margin:7px 0}
+    .quota-fill {height:100%;background:var(--accent-cyan);border-radius:20px;transition:width .3s}
+    .quota-edit {font:inherit;border:0;background:transparent;color:var(--accent-cyan);padding:0;cursor:pointer}
+    .usage-note {font-size:12px;color:var(--text-secondary);padding:12px 14px;background:var(--bg-elevated);border-radius:10px;margin:0 0 10px}
+    .theme-control {display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)}
+    .theme-control select {border:1px solid var(--border-strong);border-radius:9px;padding:8px 12px;background:var(--bg-input)}
+    .qr-banner {flex-wrap:wrap}
+    .qr-banner img {border-radius:14px}
+    @media(max-width:700px) {.app-shell{padding:14px;gap:14px}.panel{padding:17px}.desktop-header{padding:18px}.telemetry-strip{width:100%;justify-content:space-between}.brand-title-wrap h1{font-size:19px}}
   </style>
+  <script>
+    try { document.documentElement.dataset.theme = (localStorage.getItem("vortex-theme") || localStorage.getItem("unsa-theme")) || "light"; } catch {}
+  </script>
+  <link rel="stylesheet" href="/admin.css?v=1">
 </head>
 <body>
   <div class="app-shell">
     <!-- HEADER DE ESTADO EN TIEMPO REAL -->
-    <header class="cockpit-header">
+    <header class="desktop-header">
       <div class="brand-status-group">
         <span id="statusBeacon" class="status-beacon is-syncing" aria-hidden="true"></span>
         <div class="brand-title-wrap">
           <h1>
-            Agente UNSA Cockpit
+            Vortex AI Desktop
             <span id="globalStatusBadge" class="status-pill-text">Conectando...</span>
           </h1>
           <p id="whatsappDetailLine" class="brand-subtitle">Verificando estado del puente WhatsApp y FastAPI</p>
         </div>
       </div>
 
+      <label class="theme-control">Apariencia
+        <select id="themeSelect" aria-label="Tema de la interfaz" onchange="setTheme(this.value)">
+          <option value="light">Claro</option><option value="dark">Oscuro</option>
+        </select>
+      </label>
       <div class="telemetry-strip" aria-label="Telemetría del sistema">
         <div class="metric-cell">
           <span class="metric-label"><span>Lima UTC-5</span></span>
@@ -1106,7 +1170,8 @@
 
     <!-- ALERTA QR SI WHATSAPP SOLICITA VINCULACIÓN -->
     <div id="qrBanner" class="qr-banner" role="alert">
-      <span>WhatsApp solicita vinculación como dispositivo. Revisa la terminal o reinicia el puente si necesitas un QR nuevo.</span>
+      <span>En WhatsApp abre Dispositivos vinculados → Vincular un dispositivo y escanea este código.</span>
+      <img id="whatsappQr" alt="Código QR para vincular WhatsApp" width="300" height="300" style="background:white;max-width:100%;height:auto" />
       <button type="button" class="btn btn-mini" onclick="restartWhatsApp()">Regenerar QR</button>
     </div>
 
@@ -1129,7 +1194,7 @@
             <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
             <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
           </svg>
-          Limpiar Memoria de Conversación
+          Reiniciar contexto de WhatsApp
         </button>
 
         <button id="btnShutdown" type="button" class="btn btn-danger" onclick="handleShutdownClick()">
@@ -1175,7 +1240,7 @@
             <button type="button" class="chip-btn" onclick="fillAndSend('Lee y resume el último PDF descargado')">Resumir último PDF</button>
             <button type="button" class="chip-btn" onclick="fillAndSend('Inspecciona mi carpeta Downloads por peso y tipos')">Inspeccionar Descargas</button>
             <button type="button" class="chip-btn" onclick="fillAndSend('¿Qué tengo guardado en mi segundo cerebro?')">Consultar Segundo Cerebro</button>
-            <button type="button" class="chip-btn" onclick="fillAndSend('Activa el modo de entorno universidad')">Modo Estudio UNSA</button>
+            <button type="button" class="chip-btn" onclick="fillAndSend('Activa el modo de entorno universidad')">Modo Estudio</button>
             <button type="button" class="chip-btn" onclick="fillAndSend('Activa el modo cine en el monitor 2')">Modo Cine en TV</button>
             <button type="button" class="chip-btn" onclick="fillAndSend('Usa Gemini Web para crear un pptx de 8 diapositivas sobre Patrón MVC')">Crear PPTX con Gemini</button>
           </div>
@@ -1570,6 +1635,13 @@
       }).join("");
     }
 
+    function setTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      try { localStorage.setItem("vortex-theme", theme); } catch {}
+      document.getElementById("themeSelect").value = theme;
+    }
+    setTheme(document.documentElement.dataset.theme || "light");
+
     function renderModels(modelsData) {
       const forced = modelsData.forced_mode || "Auto";
       const lastUsed = modelsData.last_used_model || "Ninguno aún";
@@ -1587,11 +1659,14 @@
       btnAuto.className = "btn btn-mini" + (forced === "Auto" ? " is-active" : "");
 
       const listEl = document.getElementById("modelList");
-      listEl.innerHTML = allModels.map((model) => {
+      listEl.innerHTML = '<p class="usage-note">Tokens consumidos por las respuestas del agente. Registro diario en horario del Pacífico.</p>' + allModels.map((model) => {
         const roles = [];
         if (fastSet.has(model)) roles.push("Rápido");
         if (complexSet.has(model)) roles.push("Complejo");
 
+        const consumption = modelsData.usage?.[model] || {};
+        const tokens = consumption.tokens || 0;
+        const quotaHtml = '<div class="quota-block"><div class="quota-label"><strong>' + tokens.toLocaleString("es-PE") + ' tokens consumidos hoy</strong><span>' + (consumption.requests || 0) + ' respuestas</span></div></div>';
         const cdSec = cooldowns[model];
         const isLast = model === lastUsed;
         const isForced = model === forced;
@@ -1599,7 +1674,7 @@
         const capInfo = capabilities[model] || {};
         const mmMode = capInfo.multimodal_tool_response || "";
 
-        let statusBadge = `<span class="badge badge-ok">Vivo</span>`;
+        let statusBadge = `<span class="badge badge-ok">Disponible</span>`;
         if (isDiscarded) {
           statusBadge = `<span class="badge" style="background:var(--status-danger-dim);color:var(--status-danger);">Descartado (404)</span>`;
         } else if (cdSec) {
@@ -1619,7 +1694,8 @@
                 ${mmBadge}
                 ${lastBadge}
               </div>
-              <div class="model-role">Cola: ${roles.join(" · ") || (isDiscarded ? "Excluido en inicio" : "Respaldo")}</div>
+              <div class="model-role">${roles.join(" · ") || (isDiscarded ? "Excluido en inicio" : "Respaldo")}</div>
+              ${quotaHtml}
             </div>
             <button
               type="button"
@@ -1912,7 +1988,7 @@
         if (data.global_status === "active") {
           beacon.className = "status-beacon is-active";
           badge.className = "status-pill-text is-active";
-          badge.textContent = "Agente UNSA Activo";
+          badge.textContent = "Vortex AI Desktop Activo";
         } else if (data.global_status === "syncing") {
           beacon.className = "status-beacon is-syncing";
           badge.className = "status-pill-text";
@@ -1928,6 +2004,11 @@
         const qrBanner = document.getElementById("qrBanner");
         if (data.whatsapp?.status === "qr") {
           qrBanner.classList.add("is-visible");
+          const qrImage = document.getElementById("whatsappQr");
+          if (qrImage.dataset.qr !== data.whatsapp.qr_text) {
+            qrImage.dataset.qr = data.whatsapp.qr_text;
+            qrImage.src = `/api/whatsapp/qr?t=${Date.now()}`;
+          }
         } else {
           qrBanner.classList.remove("is-visible");
         }
@@ -2070,12 +2151,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sender: "dashboard" }),
         });
-        document.getElementById("chatFeed").innerHTML = `
-          <div class="chat-empty">
-            <strong>Memoria de conversación limpiada</strong>
-            El contexto previo se reinició tanto para WhatsApp como para el chat de PC.
-          </div>`;
-        setFeedback("Memoria limpiada en WhatsApp y Dashboard", "ok");
+        setFeedback("Contexto general de WhatsApp reiniciado", "ok");
         await refreshStatus();
       } catch (err) {
         setFeedback(`Error al limpiar memoria: ${err.message}`, "error");
@@ -2158,10 +2234,15 @@
 
     async function sendDirectChat(event) {
       event.preventDefault();
+      if (!activeChatId || chatSending) return;
+      chatSending = true;
+      const selectedChat = activeChatId;
       const input = document.getElementById("chatInput");
       const btn = document.getElementById("btnSendChat");
       const message = input.value.trim();
-      if (!message) return;
+      if (!message) { chatSending = false; return; }
+      document.getElementById("chatSelect").disabled = true;
+      document.getElementById("newChat").disabled = true;
 
       input.value = "";
       appendChatBubble("user", message);
@@ -2185,6 +2266,7 @@
             message,
             sender: "dashboard",
             source: "dashboard",
+            chat_id: selectedChat,
           }),
         });
         const data = await resp.json();
@@ -2205,7 +2287,6 @@
           ? `Archivos adjuntos: ${data.files.map((f) => f.split(/[\\/]/).pop()).join(", ")}`
           : "";
         const metaParts = [];
-        if (data.model) metaParts.push(data.model);
         if (data.duration_ms) metaParts.push(`${data.duration_ms} ms`);
         if (filesNote) metaParts.push(filesNote);
 
@@ -2217,6 +2298,10 @@
         appendChatBubble("error", `No se pudo contactar al backend: ${err.message}`);
         setFeedback(`Error de conexión: ${err.message}`, "error");
       } finally {
+        chatSending = false;
+        document.getElementById("chatSelect").disabled = false;
+        document.getElementById("newChat").disabled = false;
+        refreshChats();
         btn.disabled = false;
         input.focus();
       }
@@ -2239,5 +2324,6 @@
     refreshStatus();
     setInterval(refreshStatus, 2500);
   </script>
+  <script src="/admin.js?v=1"></script>
 </body>
 </html>

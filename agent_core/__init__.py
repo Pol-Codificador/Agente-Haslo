@@ -1,1 +1,1 @@
-"""Núcleo del Asistente Personal Universitario UNSA y Controlador de PC."""
+"""Núcleo del Vortex AI Desktop."""

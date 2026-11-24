@@ -1,4 +1,4 @@
-"""Servidor MCP (Model Context Protocol) que expone las herramientas UNSA y de control de PC."""
+"""Servidor MCP (Model Context Protocol) que expone las herramientas de Vortex AI Desktop."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ from agent_core.tools import (
     webcam_security_snapshot,
 )
 
-mcp = MCPServer("Agente-UNSA-PC")
+mcp = MCPServer("Vortex-AI-Desktop")
 
 for tool_fn in (
     get_dutic_events,

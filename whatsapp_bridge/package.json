@@ -1,7 +1,7 @@
 {
-  "name": "agente-unsa-whatsapp-bridge",
+  "name": "vortex-ai-desktop-whatsapp-bridge",
   "version": "1.0.0",
-  "description": "Puente ligero de WhatsApp con Baileys para el Asistente Personal UNSA y Controlador PC",
+  "description": "Puente ligero de WhatsApp con Baileys para el Vortex AI Desktop",
   "main": "index.js",
   "type": "module",
   "scripts": {

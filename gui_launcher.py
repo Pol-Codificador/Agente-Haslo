@@ -1,4 +1,4 @@
-"""Lanzador silencioso del Cockpit Pro (FastAPI + WhatsApp Bridge + Brave App Mode)."""
+"""Lanzador silencioso del Vortex AI Desktop (FastAPI + WhatsApp Bridge + Brave App Mode)."""
 
 from __future__ import annotations
 
@@ -239,7 +239,7 @@ def launch(open_browser: bool = True) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Lanzador Agente UNSA Cockpit")
+    parser = argparse.ArgumentParser(description="Lanzador Vortex AI Desktop")
     parser.add_argument("--no-browser", action="store_true", help="No abrir ventana de Brave")
     args = parser.parse_args()
     sys.exit(launch(open_browser=not args.no_browser))

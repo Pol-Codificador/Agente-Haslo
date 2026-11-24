@@ -1,4 +1,4 @@
-"""Servidor HTTP local FastAPI y Dashboard Cockpit para el Asistente UNSA."""
+"""Servidor HTTP local FastAPI y Panel de Vortex AI Desktop para el Vortex AI Desktop."""
 
 from __future__ import annotations
 
@@ -28,10 +28,11 @@ from typing import Any
 
 import psutil
 from fastapi import FastAPI, HTTPException
+from agent_core.memory_vault import get_model_usage
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from agent_core.agent import UniversityPCAgent
+from agent_core.agent import VortexAgent
 from agent_core.config import (
     BASE_DIR,
     DEAD_MODELS,
@@ -70,12 +71,26 @@ CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
 
 app = FastAPI(
-    title="Agente Personal UNSA & PC Controller",
+    title="Vortex AI Desktop",
     version="2.0.0",
-    description="Backend local FastAPI potenciado por Google Gemini, WhatsApp y Dashboard Cockpit.",
+    description="Backend local FastAPI potenciado por Google Gemini, WhatsApp y Panel de Vortex AI Desktop.",
 )
 
-agent = UniversityPCAgent()
+agent = VortexAgent()
+from agent_core.admin import router as admin_router
+app.include_router(admin_router)
+from agent_core.chats import router as chats_router, begin_turn, end_turn
+app.include_router(chats_router)
+
+
+@app.get("/admin.css")
+def admin_styles():
+    return FileResponse(BASE_DIR / "agent_core" / "admin.css", media_type="text/css")
+
+
+@app.get("/admin.js")
+def admin_scripts():
+    return FileResponse(BASE_DIR / "agent_core" / "admin.js", media_type="application/javascript")
 
 
 def cleanup_old_temp_media(max_age_sec: int = 86400, temp_dir: Path | None = None) -> int:
@@ -123,6 +138,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     sender: str = Field(default="default")
     source: str = Field(default="whatsapp")
+    chat_id: str | None = None
 
 
 class AudioRequest(BaseModel):
@@ -361,7 +377,7 @@ def root_redirect() -> RedirectResponse:
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def serve_dashboard() -> HTMLResponse:
-    """Sirve el Dashboard Cockpit Pro para modo app en Brave."""
+    """Sirve el Panel de Vortex AI Desktop para modo app en Brave."""
     if not DASHBOARD_HTML_PATH.exists():
         raise HTTPException(status_code=404, detail="dashboard.html no encontrado.")
     html = DASHBOARD_HTML_PATH.read_text(encoding="utf-8")
@@ -401,6 +417,22 @@ def health_check() -> dict[str, str]:
         "active_model_mode": agent.forced_model,
         "lima_time": datetime.now(LIMA_TZ).isoformat(),
     }
+
+
+@app.get("/api/whatsapp/qr")
+def whatsapp_qr():
+    """Renderiza localmente el QR vigente para vincular WhatsApp."""
+    import io
+    import qrcode
+    from fastapi.responses import Response
+
+    with _WA_STATE_LOCK:
+        qr_text = _WA_STATE.get("qr_text", "") if _WA_STATE.get("status") == "qr" else ""
+    if not qr_text:
+        raise HTTPException(status_code=404, detail="No hay un QR vigente")
+    output = io.BytesIO()
+    qrcode.make(qr_text).save(output, format="PNG")
+    return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/status")
@@ -485,6 +517,7 @@ def api_status(brain_q: str = "") -> dict[str, Any]:
             "battery": battery_info,
         },
         "models": {
+            "usage": get_model_usage(),
             "forced_mode": agent.forced_model,
             "last_used_model": agent.last_used_model,
             "all_models": all_models,
@@ -757,17 +790,57 @@ def system_shutdown() -> dict[str, str]:
     return {"status": "shutting_down", "message": "Sistema apagándose limpiamente."}
 
 
+def prepare_managed_chat(managed_chat: str, message: str) -> str:
+    from google.genai import types
+    chat, messages = begin_turn(managed_chat, message)
+    sender = "chat-" + managed_chat
+    history = []
+    if chat["context"]:
+        history.extend([
+            types.Content(role="user", parts=[types.Part.from_text(text="Contexto guardado por el usuario para esta conversación:\n" + chat["context"])]),
+            types.Content(role="model", parts=[types.Part.from_text(text="Contexto recibido.")]),
+        ])
+    # Acota el texto enviado al modelo y conserva el historial completo en SQLite.
+    remaining = 24000
+    selected = []
+    for item in reversed(messages):
+        text = item["content"][:6000]
+        if len(text) > remaining:
+            break
+        remaining -= len(text)
+        selected.append(types.Content(role="model" if item["role"] == "agent" else "user", parts=[types.Part.from_text(text=text)]))
+    with agent._lock:
+        selected.reverse()
+        if selected and selected[0].role == "model":
+            selected.pop(0)
+        agent.sessions[sender] = history + selected
+    return sender
+
 @app.post("/chat", response_model=AgentResponse)
 def chat_endpoint(payload: ChatRequest) -> AgentResponse | JSONResponse:
     """Procesa un mensaje de texto enviado desde WhatsApp o Dashboard PC."""
+    managed_chat = payload.chat_id if payload.source == "dashboard" else None
+    if payload.source == "whatsapp":
+        from agent_core.chats import whatsapp_chat_command
+        command_reply, managed_chat = whatsapp_chat_command(payload.sender, payload.message)
+        if command_reply:
+            return AgentResponse(reply=command_reply, model="local", duration_ms=0)
+    if managed_chat:
+        payload.sender = prepare_managed_chat(managed_chat, payload.message)
     try:
         result = agent.process_text(
             message=payload.message,
             sender=payload.sender,
             source=payload.source,
         )
+        if managed_chat:
+            end_turn(managed_chat, result)
+        if payload.source == "whatsapp":
+            result["reply"] = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result.get("reply", ""), flags=re.DOTALL)
         return AgentResponse(**result)
     except Exception as exc:
+        if managed_chat:
+            end_turn(managed_chat, {"reply": "La solicitud falló. Puedes volver a intentarlo.", "model": "error"})
         traceback.print_exc()
         agent.log_event("error", "Error controlado en POST /chat", str(exc), status="error")
         return JSONResponse(
@@ -811,14 +884,26 @@ def audio_endpoint(payload: AudioRequest) -> AgentResponse | JSONResponse:
             },
         )
 
+    managed_chat = None
+    if payload.source == "whatsapp":
+        from agent_core.chats import whatsapp_chat_command
+        _, managed_chat = whatsapp_chat_command(payload.sender, "")
+    if managed_chat:
+        payload.sender = prepare_managed_chat(managed_chat, "[Nota de voz enviada por WhatsApp]")
     try:
         result = agent.process_audio(
             audio_path=str(audio_file),
             sender=payload.sender,
             source=payload.source,
         )
+        if managed_chat:
+            end_turn(managed_chat, result)
+        if payload.source == "whatsapp":
+            result["reply"] = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result.get("reply", ""), flags=re.DOTALL)
         return AgentResponse(**result)
     except Exception as exc:
+        if managed_chat:
+            end_turn(managed_chat, {"reply": "No se pudo procesar la nota de voz.", "model": "error"})
         traceback.print_exc()
         agent.log_event("error", "Error controlado en POST /audio", str(exc), status="error")
         return JSONResponse(

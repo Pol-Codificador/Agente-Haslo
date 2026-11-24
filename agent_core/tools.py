@@ -1,4 +1,4 @@
-"""Herramientas obligatorias del Asistente Personal UNSA y Controlador de PC."""
+"""Herramientas obligatorias del Vortex AI Desktop."""
 
 from __future__ import annotations
 
@@ -2677,7 +2677,7 @@ def run_claude_code_task(task_description: str, working_dir: str = "") -> str:
 
     Args:
         task_description: Instrucción clara de código, refactorización, análisis o bugfix.
-        working_dir: Carpeta del proyecto donde ejecutar Claude Code (por defecto la raíz de Agente-UNSA).
+        working_dir: Carpeta del proyecto donde ejecutar Claude Code (por defecto la raíz de Vortex-AI-Desktop).
 
     Returns:
         Resultado generado por Claude Code CLI o mensaje informativo si no está instalado.
@@ -3050,7 +3050,7 @@ def _resolve_user_folder(folder_name: str) -> Path | None:
         "proyecto": [BASE_DIR],
         "project": [BASE_DIR],
         "workspace": [BASE_DIR],
-        "agente-unsa": [BASE_DIR],
+        "vortex-ai-desktop": [BASE_DIR],
         "actual": [BASE_DIR],
         ".": [BASE_DIR],
     }
@@ -3855,7 +3855,7 @@ p0.font.bold = True
 p0.font.color.rgb = TEXT
 
 p_sub = tf0.add_paragraph()
-p_sub.text = f"Generado con Fábrica Agente UNSA · IA: {{spec['target_ai'].upper()}} · {{spec['created_at']}}"
+p_sub.text = f"Generado con Fábrica Vortex AI Desktop · IA: {{spec['target_ai'].upper()}} · {{spec['created_at']}}"
 p_sub.font.size = Pt(16)
 p_sub.font.color.rgb = ACCENT
 p_sub.space_before = Pt(18)
@@ -3894,7 +3894,7 @@ for idx, sec in enumerate(sections[:content_limit], start=1):
 
     fbox = slide.shapes.add_textbox(Inches(0.75), Inches(6.95), Inches(11.8), Inches(0.4))
     fp = fbox.text_frame.paragraphs[0]
-    fp.text = f"Agente UNSA | Diapositiva {{idx + 1}} de {{target_total}}"
+    fp.text = f"Vortex AI Desktop | Diapositiva {{idx + 1}} de {{target_total}}"
     fp.font.size = Pt(11)
     fp.font.color.rgb = MUTED
 
@@ -3962,7 +3962,7 @@ for cell in ws2[1]:
     cell.fill = header_fill
     cell.font = header_font
 for sec in spec["sections"]:
-    ws2.append([sec["title"], "Pendiente revisión", "UNSA / Agente"])
+    ws2.append([sec["title"], "Pendiente revisión", "Vortex AI Desktop"])
 
 for sheet in (ws, ws2):
     for col in sheet.columns:
@@ -4000,7 +4000,7 @@ pdf.set_x(pdf.l_margin)
 pdf.cell(
     pdf.epw,
     8,
-    safe_latin(f"Agente UNSA | IA: {{spec['target_ai'].upper()}} | {{spec['created_at']}}"),
+    safe_latin(f"Vortex AI Desktop | IA: {{spec['target_ai'].upper()}} | {{spec['created_at']}}"),
     new_x=XPos.LMARGIN,
     new_y=YPos.NEXT,
 )
@@ -4058,7 +4058,7 @@ title_run.font.color.rgb = navy
 
 meta_p = doc.add_paragraph()
 meta_run = meta_p.add_run(
-    f"Agente UNSA  |  Origen IA: {{str(spec.get('target_ai', 'gemini')).upper()}}  |  Fecha: {{spec.get('created_at', '')}}"
+    f"Vortex AI Desktop  |  Origen IA: {{str(spec.get('target_ai', 'gemini')).upper()}}  |  Fecha: {{spec.get('created_at', '')}}"
 )
 meta_run.font.size = Pt(10)
 meta_run.font.color.rgb = slate
@@ -5085,7 +5085,7 @@ def _minimize_distractor_windows() -> int:
         "twitch",
         "steam",
     )
-    keep_tokens = ("antigravity", "visual studio code", "cockpit")
+    keep_tokens = ("antigravity", "visual studio code", "vortex")
     minimized = 0
 
     def _cb(hwnd: int, _lparam: int) -> bool:
@@ -5140,7 +5140,7 @@ def activate_workspace_mode(mode_name: str, send_to_whatsapp: bool = False) -> s
             send_to_whatsapp=send_to_whatsapp,
         )
         return (
-            f"Modo *Estudio UNSA* activado: DUTIC, Classroom y Gemini abiertos en Brave; "
+            f"Modo *Estudio* activado: DUTIC, Classroom y Gemini abiertos en Brave; "
             f"ventana enfocada: {win_title or 'Brave'}.\n{shot}"
         )
 
@@ -5253,7 +5253,7 @@ def git_project_manager(
     """Gestiona repositorios Git locales (status, commit, push, pull, log, diff).
 
     Args:
-        repo_path: Ruta al repositorio Git local (si se omite, usa la raíz de Agente-UNSA).
+        repo_path: Ruta al repositorio Git local (si se omite, usa la raíz de Vortex-AI-Desktop).
         action: Operación Git: 'status', 'commit', 'push', 'pull', 'log' o 'diff'.
         commit_message: Mensaje del commit (obligatorio cuando `action='commit'`).
 

@@ -14,6 +14,31 @@ DB_PATH = BASE_DIR / "agent_core" / "memory_vault.db"
 _DB_LOCK = threading.Lock()
 
 
+def record_model_usage(model: str, usage: Any) -> None:
+    """Registra tokens reportados por Gemini con persistencia entre reinicios."""
+    if usage is None:
+        return
+    from zoneinfo import ZoneInfo
+    day = datetime.now(ZoneInfo("America/Los_Angeles")).date().isoformat()
+    with _DB_LOCK, _get_connection() as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS model_usage (
+            model TEXT NOT NULL, day TEXT NOT NULL, tokens INTEGER NOT NULL,
+            requests INTEGER NOT NULL, PRIMARY KEY (model, day))""")
+        conn.execute("""INSERT INTO model_usage VALUES (?, ?, ?, 1)
+            ON CONFLICT(model, day) DO UPDATE SET
+            tokens=tokens+excluded.tokens, requests=requests+1""",
+            (model, day, int(getattr(usage, "total_token_count", 0) or 0)))
+
+
+def get_model_usage() -> dict[str, Any]:
+    from zoneinfo import ZoneInfo
+    day = datetime.now(ZoneInfo("America/Los_Angeles")).date().isoformat()
+    with _DB_LOCK, _get_connection() as conn:
+        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='model_usage'").fetchone()
+        rows = conn.execute("SELECT * FROM model_usage WHERE day=?", (day,)).fetchall() if exists else []
+    return {row["model"]: dict(row) for row in rows}
+
+
 def _get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     target = db_path or DB_PATH
     target.parent.mkdir(parents=True, exist_ok=True)

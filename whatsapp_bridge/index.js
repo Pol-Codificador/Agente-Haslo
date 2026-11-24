@@ -831,7 +831,7 @@ async function startWhatsAppBridge() {
     logger,
     printQRInTerminal: false,
     syncFullHistory: false,
-    browser: ['Agente-UNSA', 'Windows', '1.0.0'],
+    browser: ['Vortex-AI-Desktop', 'Windows', '1.0.0'],
     markOnlineOnConnect: false,
   });
 
@@ -1384,7 +1384,7 @@ function startNotifyServer() {
 }
 
 if (isMainEntry) {
-  console.log('Iniciando puente de WhatsApp (Agente UNSA)...');
+  console.log('Iniciando puente de WhatsApp (Vortex AI Desktop)...');
   startNotifyServer();
   startWhatsAppBridge().catch((err) => {
     console.error('Error fatal en el puente de WhatsApp:', err);

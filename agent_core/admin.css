@@ -1,0 +1,336 @@
+.admin-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 240px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-hairline);
+  padding: 28px 18px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.admin-logo {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  padding: 0 12px;
+}
+.admin-logo small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 6px;
+  font-weight: 600;
+}
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.admin-nav button {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 12px 14px;
+  border-radius: 10px;
+  font: 600 13px var(--font-sans);
+  cursor: pointer;
+}
+.admin-nav button.active {
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+}
+.admin-nav button:hover {
+  background: var(--bg-elevated);
+}
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.admin-footer {
+  margin-top: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 12px;
+}
+.app-shell {
+  margin-left: 240px;
+  max-width: none;
+  padding: 28px 36px;
+}
+.desktop-header {
+  box-shadow: none;
+}
+.main-grid {
+  display: block;
+}
+.column-stack {
+  display: contents;
+}
+.admin-view {
+  display: grid;
+  gap: 22px;
+  max-width: 1400px;
+}
+.admin-view[hidden] {
+  display: none !important;
+}
+.page-intro h2 {
+  font-size: 27px;
+  letter-spacing: -1px;
+  margin: 0 0 5px;
+}
+.page-intro p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.admin-view .panel {
+  margin: 0;
+}
+.admin-view .chat-feed {
+  height: 50vh;
+  min-height: 300px;
+  max-height: 650px;
+}
+.admin-view .model-list {
+  max-height: none;
+}
+.admin-view .control-bar {
+  margin: 0;
+}
+.admin-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-radius: 10px;
+  font: 13px var(--font-sans);
+}
+.field textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.field small {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.field-wide {
+  grid-column: 1/-1;
+}
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+.connection-state {
+  display: inline-block;
+  color: var(--status-ok);
+  background: var(--status-ok-dim);
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 11px;
+  margin-bottom: 16px;
+}
+.section-description {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 4px 0 22px;
+}
+.admin-view h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+.admin-feedback {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+.chat-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.chat-toolbar select {
+  flex: 1;
+  min-width: 180px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  padding: 10px;
+  border-radius: 10px;
+}
+.chat-context {
+  padding: 18px;
+  background: var(--bg-elevated);
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+.chat-context summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.chat-context .admin-form {
+  margin-top: 16px;
+}
+.admin-view a {
+  color: var(--accent-cyan);
+}
+.btn {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.btn-primary {
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+}
+.btn-danger {
+  background: var(--status-danger-dim);
+  color: var(--status-danger);
+}
+@media (min-width: 1400px) {
+  .admin-view[data-page="overview"] {
+    grid-template-columns: 1fr 1fr;
+  }
+  .admin-view[data-page="overview"] .page-intro {
+    grid-column: 1/-1;
+  }
+}
+@media (max-width: 1000px) {
+  .admin-sidebar {
+    width: 200px;
+    padding: 22px 12px;
+  }
+  .app-shell {
+    margin-left: 200px;
+    padding: 22px;
+  }
+  .admin-form {
+    grid-template-columns: 1fr;
+  }
+  .field-wide {
+    grid-column: auto;
+  }
+  .desktop-header {
+    gap: 20px;
+  }
+  .telemetry-strip {
+    width: 100%;
+  }
+}
+@media (max-width: 700px) {
+  .admin-sidebar {
+    position: relative;
+    width: auto;
+    padding: 18px;
+    gap: 18px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+  .admin-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 4px;
+  }
+  .admin-nav button {
+    white-space: nowrap;
+    padding: 10px;
+  }
+  .admin-logo small,
+  .admin-footer {
+    display: none;
+  }
+  .app-shell {
+    margin-left: 0;
+    padding: 16px;
+  }
+  .admin-view .chat-feed {
+    height: 48vh;
+  }
+  .brand-title-wrap h1 {
+    font-size: 17px;
+  }
+  .admin-nav .nav-icon {
+    display: none;
+  }
+}
+
+.model-list {
+  max-height: none !important;
+}
+.quota-track,
+.quota-edit {
+  display: none;
+}
+.admin-sidebar {
+  overflow-y: auto;
+}
+.project-tree {
+  border-top: 1px solid var(--border-hairline);
+  padding: 16px 8px;
+  font-size: 12px;
+}
+.tree-heading {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.project-tree summary {
+  cursor: pointer;
+  padding: 8px 0;
+  font-weight: 600;
+}
+.project-tree button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  font: inherit;
+}
+.project-tree button.active {
+  background: var(--accent-cyan-dim);
+  color: var(--accent-cyan);
+}
+@media (max-width: 700px) {
+  .project-tree {
+    display: none;
+  }
+}

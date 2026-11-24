@@ -1,4 +1,4 @@
-# Agente-UNSA 🤖🎓
+# Vortex AI Desktop
 
 Asistente y agente personal autónomo impulsado por la **API de Google Gemini (`google-genai`)**, diseñado originalmente para estudiantes de la **Universidad Nacional de San Agustín (UNSA)** y usuarios de Windows que buscan integrar su vida académica y productividad con el control directo de su computadora desde **WhatsApp** o un **Dashboard Web local**.
 
@@ -9,7 +9,7 @@ Integra **Google Classroom**, **DUTIC (Moodle UNSA)**, **Google Drive**, **Googl
 > [!WARNING]
 > **Proyecto en desarrollo activo (WIP) y aviso de uso responsable**
 >
-> `Agente-UNSA` se encuentra actualmente en **desarrollo activo** y **todavía no está pulido por completo** (puede presentar errores, comportamientos inesperados o dependencias específicas de Windows).
+> `Vortex-AI-Desktop` se encuentra actualmente en **desarrollo activo** y **todavía no está pulido por completo** (puede presentar errores, comportamientos inesperados o dependencias específicas de Windows).
 >
 > **Úsalo con precaución y criterio:** este agente tiene capacidades reales sobre tu equipo local —puede ejecutar comandos de PowerShell, controlar mouse y teclado, leer/organizar archivos, operar repositorios Git, tomar capturas de pantalla o fotos de webcam y enviar mensajes de WhatsApp—. Aunque incluye capas de seguridad (confirmación explícita para acciones críticas, whitelist de número y revisión básica de privacidad en capturas), **siempre debes supervisar su uso y revisar la configuración antes de ejecutarlo en tu entorno**.
 >
@@ -38,7 +38,7 @@ El agente expone **35 herramientas** mediante *Function Calling* de Gemini (con 
 ### 💬 WhatsApp, Notificaciones y Dashboard
 - **Puente WhatsApp (`whatsapp_bridge/`):** Basado en `@whiskeysockets/baileys`, con whitelist estricta (`ALLOWED_PHONE_NUMBER`), soporte para mensajes de texto, notas de voz (`.ogg`), imágenes y envío de documentos (`send_file_to_whatsapp`, `send_whatsapp_to_contact`).
 - **Alertas proactivas (`watchdog`):** `set_pc_or_task_alert` vigila eventos en segundo plano (batería, procesos, temporizadores, etc.) y te avisa automáticamente por WhatsApp.
-- **Dashboard Cockpit Web:** Interfaz local en `http://127.0.0.1:8000` (`agent_core/dashboard.html`) para chatear con el agente, ver métricas de la PC, línea de tiempo en vivo, notas del Segundo Cerebro, contactos rápidos VIP y estado del puente de WhatsApp.
+- **Panel de Vortex AI Desktop Web:** Interfaz local en `http://127.0.0.1:8000` (`agent_core/dashboard.html`) para chatear con el agente, ver métricas de la PC, línea de tiempo en vivo, notas del Segundo Cerebro, contactos rápidos VIP y estado del puente de WhatsApp.
 
 ### 🧠 Memoria Permanente y Seguridad
 - **Segundo Cerebro (SQLite):** `save_to_second_brain` y `search_second_brain` persisten notas, cursos, enlaces y recordatorios en `agent_core/memory_vault.db`.
@@ -53,12 +53,12 @@ El agente expone **35 herramientas** mediante *Function Calling* de Gemini (con 
 ## 2. Arquitectura del Proyecto
 
 ```text
-Agente-UNSA/
+Vortex-AI-Desktop/
 ├── agent_core/
 │   ├── agent.py          # Orquestador principal con Google Gemini API y enrutador de modelos
 │   ├── config.py         # Carga de .env, rutas, scopes OAuth y estado/cooldown de modelos
 │   ├── server.py         # Backend FastAPI (endpoints /chat, /audio, /reset y Dashboard API)
-│   ├── dashboard.html    # Interfaz web local (Dashboard Cockpit)
+│   ├── dashboard.html    # Interfaz web local (Panel de Vortex AI Desktop)
 │   ├── tools.py          # Herramientas de productividad, Windows, GUI, navegador y Git
 │   ├── tools_drive.py    # Integración directa con Google Classroom/Drive y análisis de PDFs
 │   ├── memory_vault.py   # Base de datos SQLite del Segundo Cerebro y confirmaciones
@@ -69,7 +69,7 @@ Agente-UNSA/
 │   ├── index.js          # Cliente WhatsApp con Baileys + servidor local de notificaciones
 │   └── package.json      # Dependencias Node.js
 ├── gui_launcher.py       # Lanzador gráfico de escritorio para gestionar los servicios
-├── iniciar_agente.bat    # Script de inicio rápido en Windows
+├── iniciar_vortex.bat    # Script de inicio rápido en Windows
 ├── setup_google_auth.py  # Flujo OAuth2 único para Google Classroom, Drive y Calendar
 ├── requirements.txt      # Dependencias de Python
 └── .env.example          # Plantilla de configuración (sin secretos)
@@ -92,8 +92,8 @@ Agente-UNSA/
 
 ### Paso 1: Clonar el repositorio
 ```powershell
-git clone https://github.com/TU_USUARIO/Agente-UNSA.git
-cd Agente-UNSA
+git clone https://github.com/Pol-Codificador/Agente-UNSA.git Vortex-AI-Desktop
+cd Vortex-AI-Desktop
 ```
 
 ### Paso 2: Crear el entorno virtual e instalar dependencias de Python
@@ -150,7 +150,7 @@ Variables principales en `.env`:
 ## 5. Cómo Iniciar el Proyecto
 
 ### Opción A: Inicio rápido (Windows)
-Haz doble clic en **`iniciar_agente.bat`** (o ejecútalo desde PowerShell). Esto abrirá el lanzador gráfico (`gui_launcher.py`) para gestionar el backend FastAPI y el puente de WhatsApp.
+Haz doble clic en **`iniciar_vortex.bat`** (o ejecútalo desde PowerShell). Esto abrirá el lanzador gráfico (`gui_launcher.py`) para gestionar el backend FastAPI y el puente de WhatsApp.
 
 ### Opción B: Inicio manual en dos terminales
 - **Terminal 1 (Backend FastAPI + Dashboard):**
@@ -190,10 +190,10 @@ Haz doble clic en **`iniciar_agente.bat`** (o ejecútalo desde PowerShell). Esto
 ```json
 {
   "mcpServers": {
-    "agente-unsa": {
-      "command": "C:\\ruta\\a\\Agente-UNSA\\.venv\\Scripts\\python.exe",
+    "vortex-ai-desktop": {
+      "command": "C:\\ruta\\a\\Vortex-AI-Desktop\\.venv\\Scripts\\python.exe",
       "args": ["-m", "agent_core.mcp_server"],
-      "cwd": "C:\\ruta\\a\\Agente-UNSA"
+      "cwd": "C:\\ruta\\a\\Vortex-AI-Desktop"
     }
   }
 }

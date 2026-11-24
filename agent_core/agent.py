@@ -388,8 +388,8 @@ def _split_combined_function_response_tail(working_contents: list[types.Content]
     return True
 
 
-class UniversityPCAgent:
-    """Agente personal universitario UNSA y controlador de PC con memoria reciente."""
+class VortexAgent:
+    """Asistente Vortex AI Desktop con memoria reciente y control de PC."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -397,7 +397,7 @@ class UniversityPCAgent:
         self._workers_lock = threading.Lock()
         self.worker_pool = ThreadPoolExecutor(
             max_workers=MAX_WORKER_THREADS,
-            thread_name_prefix="unsa_worker",
+            thread_name_prefix="vortex_worker",
         )
         self._task_seq = 0
         self._active_tasks: dict[str, dict[str, Any]] = {}
@@ -568,7 +568,7 @@ class UniversityPCAgent:
         ]
         dia_nombre = dias[now_lima.weekday()]
         return (
-            "Eres el Asistente Personal Universitario (UNSA - Arequipa, Perú) y "
+            "Eres Vortex AI Desktop, el asistente personal de IA y "
             "Controlador de PC en Windows del usuario, conectado por WhatsApp y Dashboard PC.\n"
             f"Fecha y hora actual exacta en Lima (America/Lima, UTC-5): "
             f"{dia_nombre} {now_lima.strftime('%Y-%m-%d %H:%M:%S')}.\n\n"
@@ -678,8 +678,7 @@ class UniversityPCAgent:
 
     @staticmethod
     def _format_model_badge(model_name: str) -> str:
-        icon = "⚡" if "flash" in model_name.lower() else "🧠"
-        return f"\n\n_({icon} Modelo: {model_name})_"
+        return ""
 
     def _call_model_with_timeout(
         self,
@@ -693,11 +692,28 @@ class UniversityPCAgent:
         def _run_in_ctx() -> Any:
             set_current_task_context(task_id)
             try:
-                return client.models.generate_content(
-                    model=model_name,
-                    contents=contents,
-                    config=config,
-                )
+                from agent_core.admin import get_gemini_keys, prefer_gemini_key
+                keys = get_gemini_keys()
+                response = None
+                for key_index, key in enumerate(keys):
+                    try:
+                        with genai.Client(api_key=key, http_options={"api_version": "v1beta", "timeout": 20000}) as keyed_client:
+                            response = keyed_client.models.generate_content(model=model_name, contents=contents, config=config)
+                        prefer_gemini_key(key)
+                        break
+                    except Exception as exc:
+                        code = getattr(exc, "code", None)
+                        if str(code) not in ("429", "401", "403") or key_index == len(keys) - 1:
+                            raise
+                        append_backend_log(f"[KeyPool] Clave {key_index + 1} sin acceso o cuota. Probando respaldo con el mismo contexto.")
+                if response is None:
+                    raise ValueError("Configura una clave de Gemini en Conexiones")
+                from agent_core.memory_vault import record_model_usage
+                try:
+                    record_model_usage(model_name, getattr(response, "usage_metadata", None))
+                except Exception as exc:
+                    append_backend_log(f"[Usage] No se pudo registrar consumo: {exc}")
+                return response
             finally:
                 clear_current_task_context()
 
