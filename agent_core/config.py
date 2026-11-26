@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import threading
 import time
 from datetime import datetime
@@ -13,7 +14,14 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
+RESOURCE_DIR: Path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+_default_data_dir = (
+    Path(os.environ.get("LOCALAPPDATA", Path.home())) / "VortexAI"
+    if getattr(sys, "frozen", False)
+    else RESOURCE_DIR
+)
+BASE_DIR: Path = Path(os.environ.get("VORTEX_DATA_DIR", _default_data_dir)).resolve()
+BASE_DIR.mkdir(parents=True, exist_ok=True)
 ENV_PATH: Path = BASE_DIR / ".env"
 
 # Cargar variables desde .env en la raíz del proyecto

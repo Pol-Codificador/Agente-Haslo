@@ -21,10 +21,12 @@ const isMainEntry =
   Boolean(process.argv[1]) &&
   path.resolve(process.argv[1]) === path.resolve(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
-const TEMP_DIR = path.join(ROOT_DIR, 'temp');
-const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
-const PROCESSED_FILE = path.join(__dirname, 'processed_messages.json');
-const CONTACTS_FILE = path.join(__dirname, 'contacts_cache.json');
+const DATA_DIR = path.resolve(process.env.VORTEX_DATA_DIR || ROOT_DIR);
+const BRIDGE_DATA_DIR = path.join(DATA_DIR, 'whatsapp_bridge');
+const TEMP_DIR = path.join(DATA_DIR, 'temp');
+const AUTH_DIR = path.join(BRIDGE_DATA_DIR, 'auth_info_baileys');
+const PROCESSED_FILE = path.join(BRIDGE_DATA_DIR, 'processed_messages.json');
+const CONTACTS_FILE = path.join(BRIDGE_DATA_DIR, 'contacts_cache.json');
 const MAX_PROCESSED_IDS = 500;
 const STARTUP_GRACE_MS = 8000;
 const BACKEND_TIMEOUT_MS = 660000;
@@ -32,8 +34,9 @@ const BACKEND_TIMEOUT_MS = 660000;
 let connectionOpenedAt = 0;
 let syncReadyTimer = null;
 
-dotenv.config({ path: path.join(ROOT_DIR, '.env') });
+dotenv.config({ path: path.join(DATA_DIR, '.env') });
 fs.mkdirSync(TEMP_DIR, { recursive: true });
+fs.mkdirSync(BRIDGE_DATA_DIR, { recursive: true });
 
 const AGENT_HOST = (process.env.AGENT_HOST || '127.0.0.1').trim();
 const AGENT_PORT = (process.env.AGENT_PORT || '8000').trim();

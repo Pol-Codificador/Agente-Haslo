@@ -90,7 +90,7 @@ const sidebar = document.createElement("aside");
 sidebar.className = "admin-sidebar";
 sidebar.id = "mainSidebar";
 sidebar.innerHTML =
-  '<div class="admin-logo"><img class="brand-logo" src="/assets/vortex-ai-logo.png" alt="Vortex AI"><div class="sidebar-brand-text">Vortex AI<small>Desktop</small></div></div><nav class="admin-nav" aria-label="Menú principal"></nav><div class="admin-footer">Espacio local · Windows<br>Tu asistente, en un solo lugar</div>';
+  '<div class="admin-logo"><img class="brand-logo" src="/assets/vortex-ai-logo.png" alt="Vortex AI"><div class="sidebar-brand-text">Vortex AI<small>Desktop</small></div></div><nav class="admin-nav" aria-label="Menú principal"></nav><button class="sidebar-shutdown" id="sidebarShutdown" type="button" title="Apagar Vortex"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg><span class="nav-label">Apagar Vortex</span></button><div class="admin-footer">Espacio local · Windows<br>Tu asistente, en un solo lugar</div>';
 document.body.prepend(sidebar);
 pages.forEach(([id, title, description, sections], index) => {
   const view = document.createElement("div");
@@ -195,6 +195,25 @@ function showUiDialog({
     if (input) requestAnimationFrame(() => inputControl.select());
   });
 }
+
+document.getElementById("sidebarShutdown").onclick = async () => {
+  const approved = await showUiDialog({
+    title: "Apagar Vortex",
+    message: "Se cerrarán la aplicación, el backend local y el puente de WhatsApp.",
+    confirmLabel: "Apagar todo",
+    danger: true,
+  });
+  if (!approved) return;
+  const button = document.getElementById("sidebarShutdown");
+  button.disabled = true;
+  button.querySelector(".nav-label").textContent = "Apagando…";
+  try {
+    await fetch("/system/shutdown", { method: "POST" });
+  } catch {
+    // El cierre del backend puede interrumpir la respuesta.
+  }
+  setTimeout(() => window.close(), 250);
+};
 
 document.addEventListener("pointerdown", (event) => {
   document

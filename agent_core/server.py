@@ -44,6 +44,7 @@ from agent_core.config import (
     GEMINI_MODELS_FAST,
     LIMA_TZ,
     MODEL_CAPABILITIES,
+    RESOURCE_DIR,
     TEMP_DIR,
     get_env,
     get_model_validation_status,
@@ -65,10 +66,11 @@ from agent_core.watchdog import watchdog_manager
 # Cebar lectura inicial de CPU para consultas instantáneas no bloqueantes en /api/status
 psutil.cpu_percent(interval=None)
 
-WHATSAPP_DIR = BASE_DIR / "whatsapp_bridge"
-CONTACTS_CACHE_PATH = WHATSAPP_DIR / "contacts_cache.json"
+WHATSAPP_DIR = RESOURCE_DIR / "whatsapp_bridge"
+WHATSAPP_DATA_DIR = BASE_DIR / "whatsapp_bridge"
+CONTACTS_CACHE_PATH = WHATSAPP_DATA_DIR / "contacts_cache.json"
 _CONTACTS_LOCK = threading.Lock()
-DASHBOARD_HTML_PATH = BASE_DIR / "agent_core" / "dashboard.html"
+DASHBOARD_HTML_PATH = RESOURCE_DIR / "agent_core" / "dashboard.html"
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
 
@@ -90,27 +92,27 @@ apply_catalog()
 
 @app.get("/admin.css")
 def admin_styles():
-    return FileResponse(BASE_DIR / "agent_core" / "admin.css", media_type="text/css", headers={"Cache-Control": "no-store"})
+    return FileResponse(RESOURCE_DIR / "agent_core" / "admin.css", media_type="text/css", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/admin.js")
 def admin_scripts():
-    return FileResponse(BASE_DIR / "agent_core" / "admin.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    return FileResponse(RESOURCE_DIR / "agent_core" / "admin.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/keys.js")
 def key_scripts():
-    return FileResponse(BASE_DIR / "agent_core" / "keys.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    return FileResponse(RESOURCE_DIR / "agent_core" / "keys.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/assets/vortex-ai-logo.png")
 def app_logo():
-    return FileResponse(BASE_DIR / "assets" / "vortex-ai-logo.png", media_type="image/png")
+    return FileResponse(RESOURCE_DIR / "assets" / "vortex-ai-logo.png", media_type="image/png")
 
 
 @app.get("/whatsapp.js")
 def whatsapp_scripts():
-    return FileResponse(BASE_DIR / "agent_core" / "whatsapp.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+    return FileResponse(RESOURCE_DIR / "agent_core" / "whatsapp.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 def cleanup_old_temp_media(max_age_sec: int = 86400, temp_dir: Path | None = None) -> int:
@@ -782,8 +784,9 @@ def _restart_whatsapp_bridge() -> dict[str, Any]:
     env["PYTHONUNBUFFERED"] = "1"
     wa_log = open(TEMP_DIR / "whatsapp.log", "a", encoding="utf-8", errors="replace")
     try:
+        node_executable = get_env("VORTEX_NODE_EXE", "node") or "node"
         proc = subprocess.Popen(
-            ["node", "index.js"],
+            [node_executable, "index.js"],
             cwd=str(WHATSAPP_DIR),
             env=env,
             stdout=wa_log,
@@ -812,7 +815,7 @@ def whatsapp_session():
     with _WA_STATE_LOCK:
         state = dict(_WA_STATE)
     try:
-        credentials = json.loads((WHATSAPP_DIR / "auth_info_baileys" / "creds.json").read_text(encoding="utf-8"))
+        credentials = json.loads((WHATSAPP_DATA_DIR / "auth_info_baileys" / "creds.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         credentials = {}
     identity = credentials.get("me") or {}
@@ -837,13 +840,13 @@ def disconnect_whatsapp(payload: WhatsAppDisconnectRequest):
         except Exception:
             pass
         _kill_whatsapp_bridge()
-        auth = (WHATSAPP_DIR / "auth_info_baileys").resolve()
-        if auth.parent != WHATSAPP_DIR.resolve() or auth.name != "auth_info_baileys":
+        auth = (WHATSAPP_DATA_DIR / "auth_info_baileys").resolve()
+        if auth.parent != WHATSAPP_DATA_DIR.resolve() or auth.name != "auth_info_baileys":
             raise HTTPException(500, "Ruta de sesión inesperada")
         if auth.exists():
             shutil.rmtree(auth)
         for filename in ("contacts_cache.json", "processed_messages.json"):
-            (WHATSAPP_DIR / filename).unlink(missing_ok=True)
+            (WHATSAPP_DATA_DIR / filename).unlink(missing_ok=True)
         with _WA_STATE_LOCK:
             _WA_STATE.update(status="disconnected", detail="Sesión eliminada de este equipo", qr_text="", account_phone="", account_name="", updated_at=datetime.now(LIMA_TZ).isoformat())
         if payload.generate_qr:
