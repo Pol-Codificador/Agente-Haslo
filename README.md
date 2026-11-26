@@ -1,192 +1,550 @@
+<div align="center">
+
+<img src="assets/vortex-ai-logo.png" alt="Vortex AI Desktop" width="128">
+
 # Vortex AI Desktop
 
-Asistente y agente personal autónomo impulsado por la **API de Google Gemini (`google-genai`)**, diseñado originalmente para estudiantes de la **Universidad Nacional de San Agustín (UNSA)** y usuarios de Windows que buscan integrar su vida académica y productividad con el control directo de su computadora desde **WhatsApp** o un **Dashboard Web local**.
+### Asistente local inteligente para Windows, WhatsApp y productividad académica
 
-Integra **Google Classroom**, **DUTIC (Moodle UNSA)**, **Google Drive**, **Google Calendar** y **WhatsApp** (texto, notas de voz e imágenes), con herramientas para interactuar directamente con la PC local: abrir aplicaciones, navegar enlaces, buscar y analizar archivos/PDFs, apoyar en programación, ejecutar comandos y programar alertas o automatizaciones.
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-2563eb?logo=windows11&logoColor=white)](#requisitos)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?logo=python&logoColor=white)](#tecnologías)
+[![FastAPI](https://img.shields.io/badge/FastAPI-local-009688?logo=fastapi&logoColor=white)](#arquitectura)
+[![Node.js](https://img.shields.io/badge/Node.js-WhatsApp-339933?logo=node.js&logoColor=white)](#whatsapp)
+[![Estado](https://img.shields.io/badge/estado-desarrollo%20activo-f59e0b)](#estado-del-proyecto)
+
+**Vortex AI Desktop** reúne chats con contexto, proyectos, modelos de IA, WhatsApp, Google Classroom, Drive, Calendar, DUTIC, memoria, automatizaciones y control local del computador en una sola aplicación.
+
+[Características](#características) · [Arquitectura](#arquitectura) · [Instalación](#instalación) · [Integraciones](#integraciones) · [Seguridad](#seguridad-y-privacidad) · [Pruebas](#pruebas)
+
+</div>
 
 ---
+
+## Estado del proyecto
+
+> [!IMPORTANT]
+> Esta rama contiene la **aplicación web local actual**. Se ejecuta en Windows mediante un lanzador y abre su interfaz como una aplicación independiente. La migración futura a un `.exe` con **Python + PySide6 + Qt WebEngine** está planificada, pero todavía no forma parte de esta versión.
 
 > [!WARNING]
-> **Proyecto en desarrollo activo (WIP) y aviso de uso responsable**
->
-> `Vortex-AI-Desktop` se encuentra actualmente en **desarrollo activo** y **todavía no está pulido por completo** (puede presentar errores, comportamientos inesperados o dependencias específicas de Windows).
->
-> **Úsalo con precaución y criterio:** este agente tiene capacidades reales sobre tu equipo local —puede ejecutar comandos de PowerShell, controlar mouse y teclado, leer/organizar archivos, operar repositorios Git, tomar capturas de pantalla o fotos de webcam y enviar mensajes de WhatsApp—. Aunque incluye capas de seguridad (confirmación explícita para acciones críticas, whitelist de número y revisión básica de privacidad en capturas), **siempre debes supervisar su uso y revisar la configuración antes de ejecutarlo en tu entorno**.
->
-> Si te resulta útil, ¡siéntete libre de probarlo, adaptarlo y mejorarlo a tus necesidades!
+> Vortex puede controlar aplicaciones, ejecutar herramientas locales, leer archivos, tomar capturas y enviar mensajes. Debe utilizarse en un equipo propio, con supervisión y con las confirmaciones de seguridad activadas.
+
+La aplicación trabaja principalmente en `127.0.0.1`: el panel, la API y la comunicación con el puente de WhatsApp no se publican como un servicio web externo.
 
 ---
 
-## 1. Funcionalidades y Herramientas Implementadas
+## ¿Qué problema resuelve?
 
-El agente expone **35 herramientas** mediante *Function Calling* de Gemini (con enrutamiento automático entre modelos rápidos y complejos, memoria conversacional reciente y modo multimodal):
+Vortex evita tener herramientas aisladas para cada tarea. Un mismo chat puede consultar actividades académicas, trabajar dentro de una carpeta de proyecto, crear archivos, controlar el equipo y continuar la conversación desde WhatsApp.
 
-### 🎓 Productividad Académica y UNSA
-- **DUTIC UNSA (Moodle):** `get_dutic_events` lee entregas, cuestionarios y eventos próximos desde tu feed iCal (`.ics`).
-- **Google Classroom y Drive:** `get_classroom_pending` lista cursos activos, tareas pendientes y anuncios; `download_classroom_attachment` descarga adjuntos de Drive directamente vía API sin abrir el navegador.
-- **Google Calendar:** `get_calendar_schedule` consulta tu agenda diaria (zona horaria `America/Lima`) y calcula huecos libres; `create_calendar_event` agenda bloques de estudio o recordatorios con alarmas.
-- **Análisis de documentos y videos:** `analyze_pdf_with_gemini` analiza PDFs locales de forma nativa con Gemini API; `summarize_youtube_video` extrae transcripciones con marcas de tiempo o metadatos de YouTube.
-- **Asistencia con IA Web / Docs:** `ask_web_ai_in_brave`, `build_with_heavy_web_ai` y `create_google_doc_in_brave` permiten automatizar consultas complejas o generar documentos `.docx` estructurados desde Brave.
-
-### 💻 Control de PC, Archivos y Programación
-- **Estado y monitoreo del sistema:** `get_system_status` (CPU, RAM, disco, batería y Top 5 procesos), `take_screenshot` (soporte multimonitor inteligente) y `webcam_security_snapshot` (foto rápida con cámara web).
-- **Terminal y desarrollo:** `run_terminal_command` (PowerShell con timeout de seguridad), `git_project_manager` (`status`, `commit`, `push`, `pull`, `log`, `diff`) y `run_claude_code_task` (delegación de tareas a Claude Code CLI).
-- **Archivos y descargas:** `deep_search_in_files` (búsqueda dentro de PDFs, código y texto en Desktop/Downloads/Documents), `read_local_pdf_or_file`, `organize_or_inspect_folder`, `list_recent_downloads`, `wait_for_new_download` y `verify_file`.
-- **Aplicaciones, ventanas y navegador:** `open_application_or_url`, `control_app_window` (VS Code, Brave, Antigravity), `activate_workspace_mode` (entornos completos de trabajo), `browse_and_capture` (Playwright/Chromium) y `open_and_automate_brave_service` (YouTube y servicios en Brave).
-- **Interacción directa:** `gui_click_and_type` (mouse/teclado por coordenadas o visión), `media_control` (volumen, pausa/reproducción, bloqueo de pantalla) y `pc_clipboard_and_voice` (portapapeles y lectura en voz alta).
-
-### 💬 WhatsApp, Notificaciones y Dashboard
-- **Puente WhatsApp (`whatsapp_bridge/`):** Basado en `@whiskeysockets/baileys`, con whitelist estricta (`ALLOWED_PHONE_NUMBER`), soporte para mensajes de texto, notas de voz (`.ogg`), imágenes y envío de documentos (`send_file_to_whatsapp`, `send_whatsapp_to_contact`).
-- **Alertas proactivas (`watchdog`):** `set_pc_or_task_alert` vigila eventos en segundo plano (batería, procesos, temporizadores, etc.) y te avisa automáticamente por WhatsApp.
-- **Panel de Vortex AI Desktop Web:** Interfaz local en `http://127.0.0.1:8000` (`agent_core/dashboard.html`) para chatear con el agente, ver métricas de la PC, línea de tiempo en vivo, notas del Segundo Cerebro, contactos rápidos VIP y estado del puente de WhatsApp.
-
-### 🧠 Memoria Permanente y Seguridad
-- **Segundo Cerebro (SQLite):** `save_to_second_brain` y `search_second_brain` persisten notas, cursos, enlaces y recordatorios en `agent_core/memory_vault.db`.
-- **Capas de seguridad (`agent_core/security.py`):**
-  - Confirmación explícita antes de acciones críticas (`CONFIRM_CRITICAL_ACTIONS=true`: mensajes a terceros, comandos riesgosos, Git destructivo, cambios masivos de archivos).
-  - Revisión básica de privacidad antes de enviar capturas al modelo (`SEND_SCREENSHOTS_TO_MODEL=true` y `assert_screen_privacy()`). *Limitación conocida:* en navegadores con varias pestañas, el título de ventana solo refleja la pestaña activa.
-  - Aislamiento de contenido externo para mitigar *prompt injection*.
-- **Servidor MCP opcional:** `agent_core/mcp_server.py` expone las herramientas mediante Model Context Protocol (`stdio`).
+```mermaid
+flowchart LR
+    U[Usuario] -->|Chat local| UI[Vortex AI Desktop]
+    U -->|WhatsApp| WA[Puente WhatsApp]
+    WA --> API[Backend local]
+    UI --> API
+    API --> R[Enrutador de modelos]
+    R --> G[Gemini]
+    R --> Z[GLM · Z.ai]
+    API --> PC[Herramientas de Windows]
+    API --> EDU[Google y DUTIC]
+    API --> DB[(Chats y memoria local)]
+```
 
 ---
 
-## 2. Arquitectura del Proyecto
+## Características
+
+### Chats y proyectos
+
+- Conversaciones individuales con historial persistente.
+- Contexto separado por chat para reducir consumo innecesario de tokens.
+- Proyectos que pueden contener múltiples chats y una carpeta de trabajo compartida.
+- Creación, selección, renombrado y eliminación mediante menús y modales.
+- Reutilización automática de un chat vacío en lugar de crear duplicados.
+- Títulos reconocibles para las primeras conversaciones.
+- Importación de contexto entre chats y resumen opcional con IA.
+- Lista y selección de chats también desde WhatsApp.
+- Continuidad entre conversaciones del teléfono y el panel local.
+
+```mermaid
+flowchart TD
+    P[Proyecto] --> C1[Chat de planificación]
+    P --> C2[Chat de programación]
+    P --> C3[Chat de documentación]
+    C1 --> F[Carpeta compartida]
+    C2 --> F
+    C3 --> F
+    L[Chats libres] --> C4[Conversación sin proyecto]
+```
+
+### Modelos de inteligencia artificial
+
+- Múltiples claves de **Google Gemini** y **GLM · Z.ai**.
+- Claves cifradas con DPAPI para el usuario actual de Windows.
+- Tabla para agregar, comprobar, editar, revelar, copiar y eliminar claves.
+- Descubrimiento del catálogo disponible para cada clave.
+- Separación automática entre modelos conversacionales y modelos de imagen.
+- Colas para tareas rápidas y complejas.
+- Rotación entre claves y proveedores ante saturación temporal.
+- Cooldown para cuotas agotadas y errores transitorios.
+- Cambio de proveedor sin perder el contexto administrado por Vortex.
+- Registro local del consumo reportado por los proveedores.
+- Errores breves para el usuario, sin respuestas técnicas interminables.
+
+```mermaid
+flowchart LR
+    Q[Solicitud] --> T{Tipo de tarea}
+    T -->|Rápida| F[Cola rápida]
+    T -->|Compleja o código| C[Cola compleja]
+    T -->|Imagen| I[Modelos de imagen]
+    F --> K{Clave disponible}
+    C --> K
+    K --> G[Gemini]
+    K --> Z[GLM]
+    G --> X{¿Error temporal?}
+    Z --> X
+    X -->|Sí| K
+    X -->|No| A[Respuesta]
+```
+
+### WhatsApp
+
+- Vinculación por QR como dispositivo asociado.
+- Pantalla de sesión con cuenta, número y estado.
+- Desconexión local y generación de un QR nuevo.
+- Número autorizado y prefijo opcional configurables desde la aplicación.
+- Recepción de texto, imágenes y notas de voz.
+- Envío de respuestas, capturas y documentos.
+- Contactos guardados para envíos solicitados por el usuario.
+- Selección y creación de chats desde WhatsApp.
+- Prefijo visual `>_` para identificar al asistente.
+- Conversión de Markdown a formato presentable de WhatsApp: títulos limpios, negrita correcta, viñetas, enlaces legibles y código preservado.
+
+| Comando | Función |
+|---|---|
+| `/chats` | Muestra las conversaciones disponibles |
+| `/chat 1` | Selecciona una conversación |
+| `/nuevo Nombre` | Crea o reutiliza un chat en el proyecto seleccionado |
+| `/salir` | Regresa al contexto general |
+| `/reset` | Reinicia el contexto reciente de WhatsApp |
+
+### Integraciones académicas
+
+#### Google Classroom, Drive y Calendar
+
+- Autorización OAuth de escritorio desde la interfaz.
+- Cuenta autorizada y archivo OAuth visibles.
+- Acciones para volver a autorizar, desconectar o eliminar la conexión local.
+- Consulta de cursos, tareas, anuncios y agenda.
+- Descarga de adjuntos de Classroom mediante Drive API.
+- Creación de eventos en Google Calendar.
+- Botón de ayuda con los pasos completos de configuración.
+
+#### DUTIC
+
+- Conexión mediante URL privada iCal, sin guardar la contraseña de DUTIC.
+- Lectura de eventos, entregas y actividades próximas.
+- Estado visible de la integración.
+- Sustitución o eliminación de la URL guardada.
+- Ayuda integrada para obtener correctamente la URL dinámica.
+
+### Archivos y productividad
+
+- Proyectos y archivos creados dentro de su carpeta correcta.
+- Generación local de HTML, CSS, JavaScript y otros archivos de código.
+- Documentos DOCX, hojas XLSX, presentaciones PPTX y PDF mediante bibliotecas locales.
+- Lectura y análisis de PDF.
+- Búsqueda profunda en documentos, código y carpetas comunes.
+- Inspección y organización de carpetas.
+- Seguimiento y verificación de descargas.
+- Vista de artefactos desde el menú **Archivos**.
+- Copias de respaldo antes de reemplazar archivos importantes cuando corresponde.
+
+### Control del computador
+
+- Métricas de CPU, RAM, batería, disco y procesos.
+- Detección y selección de monitores.
+- Capturas de una pantalla o panorámica multimonitor.
+- Apertura y control de aplicaciones y ventanas.
+- Automatización de Brave con la sesión real del usuario.
+- Automatización visual de mouse, teclado y atajos.
+- Comandos multimedia, portapapeles y lectura por voz.
+- Terminal y administración Git con controles de seguridad.
+- Modos de estudio, universidad, concentración o cine.
+- Captura opcional de webcam cuando el usuario la solicita.
+
+### Memoria y automatizaciones
+
+- **Segundo Cerebro:** notas persistentes y búsquedas en SQLite.
+- Memoria reciente independiente por conversación.
+- Temporizadores y recordatorios.
+- Alertas de batería baja.
+- Vigilancia de procesos.
+- Revisión programada de DUTIC.
+- Notificaciones proactivas por WhatsApp.
+
+### Experiencia de escritorio
+
+- Diseño profesional claro y oscuro.
+- Menú lateral contraíble con iconos.
+- Barra superior fija con estado del sistema.
+- Historial desplazable y caja de escritura fija.
+- Modales centrados para creación, ayuda, confirmación y eliminación.
+- Interfaz adaptable a diferentes tamaños de ventana.
+- Conexiones administrables sin editar código.
+
+---
+
+## Arquitectura
+
+```mermaid
+flowchart TB
+    subgraph Cliente[Interfaz local]
+        HTML[HTML]
+        CSS[CSS]
+        JS[JavaScript]
+    end
+    subgraph Backend[Python]
+        FAST[FastAPI]
+        AGENT[Agente y workers]
+        ROUTER[Enrutador Gemini / GLM]
+        TOOLS[Herramientas locales]
+        SEC[Confirmaciones y privacidad]
+    end
+    subgraph Datos[Persistencia local]
+        CHAT[(Chats y proyectos)]
+        MEMORY[(Segundo Cerebro)]
+        KEYS[Claves cifradas DPAPI]
+    end
+    subgraph Mensajeria[Node.js]
+        BAILEYS[Puente WhatsApp]
+    end
+    Cliente <--> FAST
+    BAILEYS <--> FAST
+    FAST --> AGENT
+    AGENT --> ROUTER
+    AGENT --> TOOLS
+    TOOLS --> SEC
+    FAST <--> CHAT
+    FAST <--> MEMORY
+    ROUTER <--> KEYS
+```
+
+### Estructura principal
 
 ```text
 Vortex-AI-Desktop/
 ├── agent_core/
-│   ├── agent.py          # Orquestador principal con Google Gemini API y enrutador de modelos
-│   ├── config.py         # Carga de .env, rutas, scopes OAuth y estado/cooldown de modelos
-│   ├── server.py         # Backend FastAPI (endpoints /chat, /audio, /reset y Dashboard API)
-│   ├── dashboard.html    # Interfaz web local (Panel de Vortex AI Desktop)
-│   ├── tools.py          # Herramientas de productividad, Windows, GUI, navegador y Git
-│   ├── tools_drive.py    # Integración directa con Google Classroom/Drive y análisis de PDFs
-│   ├── memory_vault.py   # Base de datos SQLite del Segundo Cerebro y confirmaciones
-│   ├── security.py       # Guardias de privacidad y confirmación de acciones críticas
-│   ├── watchdog.py       # Motor de alertas proactivas en segundo plano
-│   └── mcp_server.py     # Servidor MCP (stdio) opcional
+│   ├── agent.py              # Orquestación, workers y herramientas de IA
+│   ├── server.py             # FastAPI, panel y endpoints locales
+│   ├── chats.py              # Proyectos, chats e historial
+│   ├── provider_keys.py      # Claves cifradas y catálogos
+│   ├── glm_provider.py       # Adaptador GLM
+│   ├── tools.py              # Herramientas del computador
+│   ├── tools_drive.py        # Classroom, Drive y documentos
+│   ├── memory_vault.py       # Segundo Cerebro
+│   ├── watchdog.py           # Alertas y automatizaciones
+│   ├── security.py           # Confirmaciones y privacidad
+│   ├── admin.py              # Configuración e integraciones
+│   ├── dashboard.html        # Estructura visual
+│   ├── admin.css             # Temas y diseño adaptable
+│   ├── admin.js              # Chats, proyectos e integraciones
+│   ├── keys.js               # Administración de claves
+│   └── whatsapp.js           # Administración de WhatsApp
 ├── whatsapp_bridge/
-│   ├── index.js          # Cliente WhatsApp con Baileys + servidor local de notificaciones
-│   └── package.json      # Dependencias Node.js
-├── gui_launcher.py       # Lanzador gráfico de escritorio para gestionar los servicios
-├── iniciar_vortex.bat    # Script de inicio rápido en Windows
-├── setup_google_auth.py  # Flujo OAuth2 único para Google Classroom, Drive y Calendar
-├── requirements.txt      # Dependencias de Python
-└── .env.example          # Plantilla de configuración (sin secretos)
+│   ├── index.js              # Mensajería y sesión
+│   └── index.test.js         # Pruebas de formato
+├── assets/vortex-ai-logo.png
+├── tests/                    # Pruebas de regresión
+├── gui_launcher.py           # Lanzador silencioso
+├── iniciar_vortex.bat        # Inicio rápido
+├── setup_google_auth.py      # OAuth alternativo por consola
+├── requirements.txt
+└── .env.example
 ```
 
 ---
 
-## 3. Requisitos Previos
+## Tecnologías
 
-- **Sistema Operativo:** Windows 10 u 11 (varias herramientas usan APIs nativas de Windows como `pywin32`, PowerShell y automatización de ventanas).
-- **Python:** 3.11 o superior.
-- **Node.js:** 18 o superior (con `npm`).
-- **Clave de API de Google Gemini:** Obtenida desde [Google AI Studio](https://aistudio.google.com/app/apikey).
-- *(Opcional)* **Proyecto en Google Cloud Console** si deseas integrar Google Classroom, Drive y Calendar.
-- *(Opcional)* **Brave Browser** si utilizarás las herramientas de automatización en Brave.
+| Área | Tecnología |
+|---|---|
+| Agente y herramientas | Python 3.11+ |
+| API local | FastAPI + Uvicorn |
+| Interfaz actual | HTML, CSS y JavaScript |
+| Modelos | Google Gemini y GLM · Z.ai |
+| WhatsApp | Node.js + Baileys |
+| Persistencia | SQLite y archivos locales protegidos |
+| Google | OAuth 2.0 + Classroom, Drive y Calendar API |
+| Automatización | PyAutoGUI, Playwright, Win32 y Windows |
+| Documentos | python-docx, openpyxl, python-pptx, pypdf y fpdf2 |
+| Futuro `.exe` | PySide6 + Qt 6 + Qt WebEngine + PyInstaller |
 
 ---
 
-## 4. Instalación Paso a Paso
+## Requisitos
 
-### Paso 1: Clonar el repositorio
+- Windows 10 u 11.
+- Python 3.11 o superior.
+- Node.js 18 o superior con npm.
+- Una clave válida de Gemini o GLM.
+- Brave, Chrome o Edge para las funciones web.
+- WhatsApp en el teléfono para vincular el dispositivo.
+- Google Cloud solo si utilizarás Classroom, Drive o Calendar.
+
+---
+
+## Instalación
+
+### 1. Clonar esta rama
+
 ```powershell
-git clone https://github.com/Pol-Codificador/Agente-UNSA.git Vortex-AI-Desktop
+git clone -b feat/vortex-ai-desktop https://github.com/Pol-Codificador/Agente-UNSA.git Vortex-AI-Desktop
 cd Vortex-AI-Desktop
 ```
 
-### Paso 2: Crear el entorno virtual e instalar dependencias de Python
+### 2. Preparar Python
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\pip.exe install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Si vas a usar navegación automatizada con Playwright (`browse_and_capture`), instala también el binario de Chromium:
+Para navegación automatizada:
+
 ```powershell
 .\.venv\Scripts\playwright.exe install chromium
 ```
 
-### Paso 3: Instalar dependencias del puente de WhatsApp (Node.js)
+### 3. Preparar WhatsApp
+
 ```powershell
 cd whatsapp_bridge
 npm install
 cd ..
 ```
 
-### Paso 4: Configurar conexiones desde el panel
+### 4. Iniciar Vortex
 
-Abre el programa y entra a **Configuración → Claves de API**. Selecciona **Gemini** o **GLM · Z.ai**, agrega tu clave y pulsa **Guardar y comprobar**. Cada fila permite comprobar, editar, eliminar, mostrar y copiar la clave. La comprobación hace una consulta breve real y detecta el catálogo de modelos para organizar automáticamente las colas rápidas y complejas.
+Haz doble clic en `iniciar_vortex.bat` o ejecuta:
 
-Las claves se guardan cifradas con DPAPI para el usuario actual de Windows en `.provider_keys.json`, ignorado por Git. Al iniciar por primera vez se migran las claves existentes de `.env`. Para GLM se requiere una clave de la API estándar de Z.ai. Si el proveedor no publica un catálogo, se prueban las variantes Flash gratuitas documentadas. La clasificación por familia no garantiza cuota ni acceso a cada modelo.
+```powershell
+.\.venv\Scripts\pythonw.exe gui_launcher.py
+```
 
-Configura el número autorizado y el prefijo en **WhatsApp**. El correo institucional, el calendario y la URL iCal de DUTIC se configuran en **Integraciones**.
+El lanzador inicia el backend, el puente de WhatsApp y la ventana local.
 
-### Paso 5: Autenticación con Google Classroom, Drive y Calendar *(Opcional)*
-1. Ve a [Google Cloud Console](https://console.cloud.google.com/), crea un proyecto y habilita:
-   - **Google Classroom API**
-   - **Google Drive API**
-   - **Google Calendar API**
-2. Configura la **Pantalla de consentimiento de OAuth** (en modo Prueba, agrega tu correo en *Usuarios de prueba*).
-3. En **Credenciales -> Crear credenciales -> ID de cliente de OAuth**, elige **Aplicación de escritorio**.
-4. Descarga el JSON, renómbralo a **`credentials.json`** y colócalo en la raíz del proyecto.
-5. Ejecuta una sola vez:
-   ```powershell
-   .\.venv\Scripts\python.exe setup_google_auth.py
-   ```
-   Se abrirá el navegador para autorizar tu cuenta y se generará `token.json` localmente (ignorado por Git).
+### Inicio manual para desarrollo
 
----
+```powershell
+# Terminal 1
+.\.venv\Scripts\python.exe -m agent_core.server
 
-## 5. Cómo Iniciar el Proyecto
+# Terminal 2
+npm --prefix whatsapp_bridge start
+```
 
-### Opción A: Inicio rápido (Windows)
-Haz doble clic en **`iniciar_vortex.bat`** (o ejecútalo desde PowerShell). Esto abrirá el lanzador gráfico (`gui_launcher.py`) para gestionar el backend FastAPI y el puente de WhatsApp.
-
-### Opción B: Inicio manual en dos terminales
-- **Terminal 1 (Backend FastAPI + Dashboard):**
-  ```powershell
-  .\.venv\Scripts\python.exe -m agent_core.server
-  ```
-  El Dashboard estará disponible en `http://127.0.0.1:8000`.
-
-- **Terminal 2 (Puente de WhatsApp):**
-  ```powershell
-  cd whatsapp_bridge
-  npm start
-  ```
-  Escanea el **código QR** desde tu celular en **WhatsApp -> Dispositivos vinculados -> Vincular un dispositivo**.
+Panel local: `http://127.0.0.1:8000/dashboard`
 
 ---
 
-## 6. Ejemplos de Uso (WhatsApp o Dashboard)
+## Integraciones
 
-- *"¿Qué tareas tengo pendientes en DUTIC esta semana y en Classroom?"*
-- *"Muéstrame mi horario de hoy y qué huecos libres tengo para estudiar."*
-- *"Agenda un bloque de estudio de Base de Datos hoy de 18:00 a 20:00."*
-- *"Descarga el PDF de la práctica de Redes de Classroom y resúmelo."*
-- *"Busca en mis carpetas cualquier PDF que mencione 'normalización'."*
-- *"Mándame una captura de pantalla de mi PC."*
-- *"¿Cuánta RAM y batería me queda? ¿Qué procesos consumen más?"*
-- *"Abre VS Code"* o *"Ejecuta `git status` en mi proyecto."*
-- *"Guarda en mi segundo cerebro que el examen parcial es el viernes a las 10:00."*
-- `/reset` para reiniciar la memoria reciente de la conversación.
+### Claves de IA
+
+1. Abre **Configuración**.
+2. Pulsa **Agregar API key**.
+3. Selecciona Gemini o GLM.
+4. Guarda y pulsa **Comprobar**.
+5. Revisa los modelos detectados.
+
+### WhatsApp
+
+1. Abre **WhatsApp → Sesión**.
+2. Pulsa **Generar QR nuevo**.
+3. En el teléfono abre **Dispositivos vinculados → Vincular un dispositivo**.
+4. Escanea el QR.
+5. Configura el número autorizado en **Acceso**.
+
+### Google
+
+1. Crea un proyecto en Google Cloud.
+2. Habilita Drive API, Calendar API y Classroom API.
+3. Configura Google Auth Platform y los usuarios de prueba.
+4. Crea un cliente OAuth de tipo **Aplicación de escritorio**.
+5. Descarga el JSON.
+6. En Vortex abre **Integraciones**, selecciona el archivo y autoriza la cuenta.
+
+Vortex permite desconectar el token conservando el JSON o eliminar por completo ambos archivos locales.
+
+### DUTIC
+
+1. Abre DUTIC → Calendario → Importar o exportar calendarios → Exportar calendario.
+2. Selecciona **Todos los eventos**.
+3. Selecciona **60 días recientes y próximos**.
+4. Pulsa **Obtener URL del calendario**.
+5. Copia la URL en **Integraciones → Calendario DUTIC**.
+
+No uses **Exportar** si quieres sincronización: descarga una copia estática.
 
 ---
 
-## 7. Uso Opcional como Servidor MCP
+## Flujo de una solicitud
 
-`agent_core/mcp_server.py` expone las herramientas del agente vía **Model Context Protocol (`stdio`)**. Ejemplo de configuración para clientes compatibles:
+```mermaid
+sequenceDiagram
+    participant U as Usuario
+    participant V as Vortex
+    participant R as Enrutador IA
+    participant T as Herramienta local
+    participant D as Datos locales
+    U->>V: Envía una instrucción
+    V->>D: Recupera contexto del chat
+    V->>R: Selecciona proveedor y modelo
+    R-->>V: Solicita herramienta si es necesaria
+    V->>T: Ejecuta acción autorizada
+    T-->>V: Devuelve resultado verificable
+    V->>D: Guarda el turno
+    V-->>U: Entrega una respuesta clara
+```
+
+---
+
+## Seguridad y privacidad
+
+### Datos que permanecen locales
+
+- Chats, proyectos y Segundo Cerebro.
+- Claves de proveedores cifradas.
+- Token y credenciales OAuth de Google.
+- URL privada iCal de DUTIC.
+- Sesión de WhatsApp y caché de contactos.
+- Capturas, registros y archivos temporales.
+
+### Excluidos de Git
+
+```text
+.env
+.provider_keys.json*
+credentials.json
+token.json
+google_connection.json
+*.db / *.sqlite*
+whatsapp_bridge/auth_info_baileys/
+whatsapp_bridge/processed_messages.json
+whatsapp_bridge/contacts_cache.json
+temp/*
+generated_projects/
+```
+
+> [!CAUTION]
+> Nunca publiques claves API, JSON OAuth, `token.json`, la URL iCal ni la sesión de WhatsApp. Revisa siempre `git status` antes de confirmar cambios.
+
+### Controles incorporados
+
+- Administración limitada al equipo local.
+- Validación del origen de solicitudes de configuración.
+- Confirmación antes de operaciones críticas.
+- Número autorizado para WhatsApp.
+- Protección de archivos sensibles.
+- Separación entre contenido externo e instrucciones.
+- Capturas internas sin envío automático por WhatsApp.
+- Identidad consistente de Vortex sin exponer detalles internos.
+
+---
+
+## Ejemplos de uso
+
+```text
+¿Qué tareas tengo pendientes en Classroom y DUTIC esta semana?
+```
+
+```text
+Crea un proyecto llamado Portal académico y prepara un index.html.
+```
+
+```text
+Busca los PDF que mencionen normalización y resume el más reciente.
+```
+
+```text
+Agenda mañana de 18:00 a 20:00 un bloque de estudio de Redes.
+```
+
+```text
+Avísame por WhatsApp cuando termine este proceso.
+```
+
+---
+
+## Pruebas
+
+```powershell
+# Python
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+
+# Puente de WhatsApp
+npm --prefix whatsapp_bridge test
+
+# Sintaxis
+.\.venv\Scripts\python.exe -m compileall -q agent_core
+node --check agent_core/admin.js
+node --check whatsapp_bridge/index.js
+```
+
+La suite cubre proyectos y chats, borradores vacíos, proveedores, fallback de modelos, archivos locales, identidad, Google, DUTIC, WhatsApp y preferencias de generación web.
+
+---
+
+## Servidor MCP opcional
 
 ```json
 {
   "mcpServers": {
     "vortex-ai-desktop": {
-      "command": "C:\\ruta\\a\\Vortex-AI-Desktop\\.venv\\Scripts\\python.exe",
+      "command": "C:\\ruta\\Vortex-AI-Desktop\\.venv\\Scripts\\python.exe",
       "args": ["-m", "agent_core.mcp_server"],
-      "cwd": "C:\\ruta\\a\\Vortex-AI-Desktop"
+      "cwd": "C:\\ruta\\Vortex-AI-Desktop"
     }
   }
 }
 ```
+
+---
+
+## Ruta hacia la aplicación `.exe`
+
+```mermaid
+flowchart LR
+    A[Aplicación web local actual] --> B[PySide6 + Qt WebEngine]
+    B --> C[Backend Python integrado]
+    C --> D[Empaquetado con PyInstaller]
+    D --> E[Vortex AI Desktop.exe]
+```
+
+Objetivos de la siguiente etapa:
+
+- ejecutar un único `.exe`;
+- configurar claves, WhatsApp e integraciones desde la interfaz;
+- distribuir la aplicación sin entregar el código fuente;
+- separar datos y secretos por usuario de Windows;
+- conservar chats, proyectos, automatizaciones y control del PC.
+
+---
+
+## Contribución
+
+1. Crea una rama para tu cambio.
+2. No incluyas datos locales ni secretos.
+3. Agrega o actualiza pruebas.
+4. Ejecuta las comprobaciones anteriores.
+5. Usa commits breves y descriptivos.
+
+---
+
+<div align="center">
+
+**Vortex AI Desktop** · Tu asistente, tus proyectos y tu computador en un solo lugar.
+
+</div>
