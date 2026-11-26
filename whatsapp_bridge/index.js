@@ -1,3 +1,4 @@
+/* Puente de mensajería hecho para Vortex AI Desktop. */
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -10,7 +11,6 @@ import qrcode from 'qrcode-terminal';
 import makeWASocket, {
   DisconnectReason,
   downloadMediaMessage,
-  fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
@@ -40,9 +40,34 @@ const AGENT_PORT = (process.env.AGENT_PORT || '8000').trim();
 const BACKEND_URL = `http://${AGENT_HOST}:${AGENT_PORT}`;
 const ALLOWED_PHONE = (process.env.ALLOWED_PHONE_NUMBER || '').replace(/\D/g, '');
 const BOT_PREFIX = (process.env.BOT_PREFIX || '').trim();
+const AI_REPLY_PREFIX = '>_ ';
 const WHATSAPP_NOTIFY_PORT = Number((process.env.WHATSAPP_NOTIFY_PORT || '8001').trim()) || 8001;
 
 let activeSock = null;
+let manualLogout = false;
+
+function formatAiReply(text) {
+  const clean = String(text || '').trim();
+  if (!clean) return '';
+  const protectedCode = [];
+  const codeSafeText = clean.replace(/```[\s\S]*?```|`[^`\n]*`/g, (code) => {
+    const marker = `\u0000CODE_${protectedCode.length}\u0000`;
+    protectedCode.push(code);
+    return marker;
+  });
+  const whatsappText = codeSafeText
+    .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '*$1*')
+    .replace(/^\s{0,3}#{1,6}\s+(.+)$/gm, (_, title) => `*${title.replace(/\*/g, '').trim()}*`)
+    .replace(/^\s*[-+*]\s+/gm, '• ')
+    .replace(/^\s*>\s?/gm, '▌ ')
+    .replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, '$1: $2')
+    .replace(/^\s*_{3,}\s*$|^\s*-{3,}\s*$|^\s*\*{3,}\s*$/gm, '────────')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\u0000CODE_(\d+)\u0000/g, (_, index) => protectedCode[Number(index)] || '');
+  return whatsappText.startsWith(AI_REPLY_PREFIX)
+    ? whatsappText
+    : `${AI_REPLY_PREFIX}${whatsappText}`;
+}
 
 const socketFactory =
   typeof makeWASocket === 'function'
@@ -544,7 +569,7 @@ async function callBackend(endpoint, payload, timeoutMs = BACKEND_TIMEOUT_MS) {
 function reportBridgeState(status, detail = '', qrText = '') {
   callBackend(
     '/api/whatsapp/state',
-    { status, detail, qr_text: qrText },
+    { status, detail, qr_text: qrText, account_phone: extractJidUser(activeSock?.user?.id || ''), account_name: activeSock?.user?.name || '' },
     2500
   ).catch(() => {
     // No bloquear el puente si FastAPI todavía está arrancando
@@ -599,7 +624,7 @@ async function sendAgentResponse(sock, remoteJid, quotedMsg, data) {
   const files = Array.isArray(data.files)
     ? data.files.filter((p) => p && fs.existsSync(p))
     : [];
-  const replyText = (data.reply || '').trim();
+  const replyText = formatAiReply(data.reply);
   let textDelivered = false;
 
   if (images.length > 0) {
@@ -722,7 +747,7 @@ async function _dispatchAuthorizedMessage(sock, msg, msgId) {
       console.error('[Error Audio]', err);
       const sentErr = await sock.sendMessage(
         remoteJid,
-        { text: `Error procesando tu nota de voz: ${err.message}` },
+        { text: formatAiReply(`Error procesando tu nota de voz: ${err.message}`) },
         { quoted: msg }
       );
       trackSentMessage(sentErr);
@@ -783,17 +808,19 @@ async function _dispatchAuthorizedMessage(sock, msg, msgId) {
     if (endpoint === '/reset') {
       const sentReset = await sock.sendMessage(
         remoteJid,
-        { text: 'Memoria de conversación reiniciada.' },
+        { text: formatAiReply('Memoria de conversación reiniciada.') },
         { quoted: msg }
       );
-      trackSentMessage(sentReset, 'Memoria de conversación reiniciada.');
+      trackSentMessage(sentReset, formatAiReply('Memoria de conversación reiniciada.'));
     } else {
       await sendAgentResponse(sock, remoteJid, msg, data);
     }
     await reactToMessage(sock, msg, '✅');
   } catch (err) {
     console.error('[Error Chat]', err);
-    const errText = `No pude comunicarme con el backend Python (${BACKEND_URL}): ${err.message}`;
+    const errText = formatAiReply(
+      `No pude comunicarme con el backend Python (${BACKEND_URL}): ${err.message}`
+    );
     const sentErr = await sock.sendMessage(
       remoteJid,
       { text: errText },
@@ -807,17 +834,12 @@ async function _dispatchAuthorizedMessage(sock, msg, msgId) {
 }
 
 async function startWhatsAppBridge() {
+  if (manualLogout) return;
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-  let version;
-  try {
-    const latest = await fetchLatestBaileysVersion();
-    version = latest.version;
-  } catch {
-    version = undefined;
-  }
-
+  // Usa la versión incluida en Baileys: generar el QR no depende de GitHub.
+  reportBridgeState('connecting', 'Conectando con WhatsApp para obtener el QR…');
   const sock = socketFactory({
-    version,
+    connectTimeoutMs: 20000,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
@@ -881,7 +903,7 @@ async function startWhatsAppBridge() {
       }
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       console.log(`[WhatsApp] Conexión cerrada (código ${statusCode ?? 'desconocido'}).`);
-      reportBridgeState('disconnected', `Código ${statusCode ?? 'desconocido'}`);
+      reportBridgeState('disconnected', statusCode === 408 ? 'WhatsApp no respondió. Comprueba la conexión o prueba otra red y vuelve a generar el QR.' : `Conexión cerrada (código ${statusCode ?? 'desconocido'}).`);
 
       if (statusCode === 440) {
         console.log(
@@ -891,6 +913,7 @@ async function startWhatsAppBridge() {
         process.exit(0);
       }
 
+      if (manualLogout) return;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       console.log(`[GUI_EVENT] WA_CLOSED|${statusCode ?? 'desconocido'}|${shouldReconnect}`);
       if (shouldReconnect) {
@@ -1185,6 +1208,29 @@ function startNotifyServer() {
     const parsedUrl = new URL(req.url || '/', 'http://127.0.0.1');
     const reqPath = parsedUrl.pathname || '/';
 
+    if (req.method === 'POST' && reqPath === '/session/logout') {
+      if (req.headers.origin) {
+        sendJson(res, 403, {ok: false});
+        return;
+      }
+      manualLogout = true;
+      if (syncReadyTimer) {
+        clearTimeout(syncReadyTimer);
+        syncReadyTimer = null;
+      }
+      try {
+        if (activeSock?.user?.id) {
+          await activeSock.logout();
+          sendJson(res, 200, {ok: true, revoked: true});
+        } else {
+          sendJson(res, 200, {ok: true, revoked: false});
+        }
+      } catch {
+        sendJson(res, 200, {ok: true, revoked: false});
+      }
+      return;
+    }
+
     if (req.method === 'GET' && reqPath === '/health') {
       sendJson(res, 200, {
         ok: true,
@@ -1394,6 +1440,7 @@ if (isMainEntry) {
 
 export {
   contactsIndex,
+  formatAiReply,
   normalizePeruvianPhone,
   normalizeTextForMatch,
   resolveContactTarget,

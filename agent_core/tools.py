@@ -1,4 +1,4 @@
-"""Herramientas obligatorias del Vortex AI Desktop."""
+"""Herramientas de escritorio hechas para Vortex AI Desktop."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ except Exception:
         pass
 
 import ast
+import uuid
+from contextvars import ContextVar
+from functools import wraps
 import json
 import math
 import os
@@ -1208,6 +1211,71 @@ def get_system_status() -> str:
     return "\n".join(lines)
 
 
+def current_project_directory() -> Path:
+    sender, _, _ = get_security_context()
+    from agent_core.chats import chat_workspace, current_project_target
+    chat_id = current_project_target(get_current_task_id())
+    if not chat_id and sender.startswith("chat-"):
+        chat_id = sender.removeprefix("chat-")
+    if chat_id:
+        folder = chat_workspace(chat_id)
+        if folder:
+            path = Path(folder)
+            if not path.is_dir():
+                raise FileNotFoundError(f"La carpeta del proyecto ya no existe: {path}")
+            return path
+    return BASE_DIR
+
+
+def create_vortex_project(name: str, folder_path: str = "") -> str:
+    """Crea o registra un proyecto de trabajo, su carpeta y su chat dentro de Vortex.
+
+    Args:
+        name: Nombre del proyecto solicitado por el usuario.
+        folder_path: Carpeta existente o nueva indicada por el usuario. Vacía para usar la carpeta de proyectos de Vortex.
+    """
+    from agent_core.chats import ensure_workspace_project, set_project_target
+    project = ensure_workspace_project(name, folder_path)
+    set_project_target(get_current_task_id(), project["chat_id"])
+    return project["reply"]
+
+
+def write_project_file(relative_path: str, content: str) -> str:
+    """Crea o actualiza un archivo UTF-8 del proyecto sin intérprete de comandos.
+
+    Args:
+        relative_path: Ruta relativa dentro del proyecto, por ejemplo index.html.
+        content: Contenido completo literal del archivo, sin escapes de consola.
+    """
+    try:
+        root = current_project_directory().resolve()
+        relative = Path(relative_path)
+        if relative.is_absolute() or ".." in relative.parts or any(part.startswith(".") for part in relative.parts):
+            return json.dumps({"error": "Usa una ruta relativa dentro del proyecto."})
+        target = (root / relative).resolve()
+        if not target.is_relative_to(root) or target == root:
+            return json.dumps({"error": "La ruta está fuera del proyecto."})
+        if root == BASE_DIR.resolve() and relative.parts[0] in {"agent_core", "whatsapp_bridge", "gui_launcher.py", "tests", "assets"}:
+            return json.dumps({"error": "Selecciona un proyecto de usuario antes de modificar estos archivos."})
+        target.parent.mkdir(parents=True, exist_ok=True)
+        backup = None
+        if target.exists():
+            backup = target.with_name(target.name + ".backup-" + uuid.uuid4().hex[:12])
+            shutil.copy2(target, backup)
+        data = content.encode("utf-8")
+        temporary = target.with_name(target.name + ".pending-" + uuid.uuid4().hex)
+        try:
+            temporary.write_bytes(data)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        if target.read_bytes() != data:
+            return json.dumps({"error": "El contenido guardado no coincide."})
+        return json.dumps({"saved": True, "path": str(target), "bytes": len(data), "backup": str(backup) if backup else None}, ensure_ascii=False)
+    except (OSError, ValueError) as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False)
+
+
 def run_terminal_command(command: str) -> str:
     """Ejecuta un comando en PowerShell de Windows con timeout de seguridad de 30 segundos.
 
@@ -1240,6 +1308,7 @@ def run_terminal_command(command: str) -> str:
             text=True,
             encoding="utf-8",
             errors="replace",
+            cwd=str(current_project_directory()),
         )
         while proc.poll() is None:
             if is_task_cancelled():
@@ -1843,6 +1912,38 @@ def gui_click_and_type(
 DOCS_BACKUP_DIR = Path.home() / "Desktop" / "Mis_Documentos_Agente"
 
 
+_WEB_AI_BROWSER_CONTEXT = ContextVar("web_ai_browser", default=None)
+
+
+def _automation_browser_name():
+    return {"chrome": "Google Chrome", "edge": "Microsoft Edge"}.get(_WEB_AI_BROWSER_CONTEXT.get(), "Brave")
+
+
+def _selected_web_browser_executable(browser):
+    suffix = {"brave": r"BraveSoftware/Brave-Browser/Application/brave.exe", "chrome": r"Google/Chrome/Application/chrome.exe", "edge": r"Microsoft/Edge/Application/msedge.exe"}[browser]
+    for root in (os.environ.get("PROGRAMFILES", r"C:/Program Files"), os.environ.get("PROGRAMFILES(X86)", r"C:/Program Files (x86)"), os.environ.get("LOCALAPPDATA", "")):
+        candidate = Path(root) / suffix
+        if candidate.is_file():
+            return str(candidate)
+    return shutil.which({"brave": "brave.exe", "chrome": "chrome.exe", "edge": "msedge.exe"}[browser])
+
+
+def _with_web_ai_browser(function):
+    @wraps(function)
+    def run(*args, **kwargs):
+        browser = get_env("WEB_AI_BROWSER", "brave")
+        if browser not in ("brave", "chrome", "edge"):
+            return json.dumps({"error": "Elige un navegador válido en Configuración."})
+        if not _selected_web_browser_executable(browser):
+            return json.dumps({"error": "El navegador seleccionado no está instalado. Elige otro en Configuración."})
+        token = _WEB_AI_BROWSER_CONTEXT.set(browser)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _WEB_AI_BROWSER_CONTEXT.reset(token)
+    return run
+
+
 def _find_brave_executable() -> str | None:
     """Busca la ruta del ejecutable de Brave Browser en Windows."""
     local_app_data = os.environ.get("LOCALAPPDATA", "")
@@ -1875,6 +1976,12 @@ def _open_url_in_brave(url: str, new_window: bool = False) -> str:
             return "already_opened_recently"
         _RECENT_BRAVE_URLS[clean_url] = now_ts
 
+    if _WEB_AI_BROWSER_CONTEXT.get():
+        executable = _selected_web_browser_executable(_WEB_AI_BROWSER_CONTEXT.get())
+        if not executable:
+            raise ValueError("El navegador seleccionado no está instalado")
+        subprocess.Popen([executable, *(["--new-window"] if new_window else []), clean_url], shell=False)
+        return executable
     brave_path = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
     if not os.path.exists(brave_path):
         brave_path = _find_brave_executable() or ""
@@ -2024,8 +2131,8 @@ def _launch_and_focus_brave(
     """Abre físicamente Brave real con la URL indicada y fuerza su enfoque en primer plano."""
     _open_url_in_brave(url, new_window=new_window)
     time.sleep(max(0.5, float(wait_seconds)))
-    hints = list(focus_hints) if focus_hints else ["- Brave", "Brave"]
-    if "Brave" not in hints:
+    hints = [_automation_browser_name()] if _WEB_AI_BROWSER_CONTEXT.get() else (list(focus_hints) if focus_hints else ["- Brave", "Brave"])
+    if not _WEB_AI_BROWSER_CONTEXT.get() and "Brave" not in hints:
         hints.append("Brave")
     focused, _ = _focus_window_by_keywords(hints, maximize=maximize)
     return bool(focused)
@@ -2156,7 +2263,7 @@ def ask_web_ai_in_brave(
 
     time.sleep(wait_sec)
     screenshot_status = take_screenshot(
-        target_window_title="Brave",
+        target_window_title=_automation_browser_name(),
         send_to_whatsapp=send_to_whatsapp,
     )
     focus_note = "Brave / Gemini Web" if focused else "Brave (ventana no confirmada por título)"
@@ -2700,6 +2807,8 @@ def run_claude_code_task(task_description: str, working_dir: str = "") -> str:
             cwd_path = candidate_dir
         else:
             return f"El directorio especificado no existe: {working_dir}"
+    else:
+        cwd_path = current_project_directory()
 
     try:
         completed = subprocess.run(
@@ -2734,6 +2843,7 @@ def run_claude_code_task(task_description: str, working_dir: str = "") -> str:
 
 
 ALL_TOOLS = [
+    create_vortex_project,
     get_dutic_events,
     get_classroom_pending,
     get_calendar_schedule,
@@ -2741,6 +2851,7 @@ ALL_TOOLS = [
     take_screenshot,
     get_system_status,
     run_terminal_command,
+    write_project_file,
     open_application_or_url,
     media_control,
     browse_and_capture,
@@ -3411,7 +3522,7 @@ def _normalize_output_format(output_format: str) -> str:
         return "pdf"
     if raw in ("py", "python", "script", "codigo", "código"):
         return "py"
-    return "pptx"
+    raise ValueError("Formato no compatible con la fábrica: " + raw)
 
 
 def _slugify_project_name(text: str) -> str:
@@ -3654,13 +3765,15 @@ def _run_generated_python_script(script_path: Path, output_path: Path) -> tuple[
 
 def _focus_brave_and_get_rect(hints: list[str]) -> tuple[bool, str, tuple[int, int, int, int]]:
     """Enfoca/maximiza Brave con _force_focus_window y retorna su rectángulo vía GetWindowRect."""
+    if _WEB_AI_BROWSER_CONTEXT.get():
+        hints = [_automation_browser_name()]
     focused, win_title = _focus_window_by_keywords(hints, maximize=True)
     if not focused:
-        focused, win_title = _focus_window_by_keywords(["Brave"], maximize=True)
+        focused, win_title = _focus_window_by_keywords([_automation_browser_name()], maximize=True)
 
     hwnd, found_title = _find_window_handle(hints)
     if not hwnd:
-        hwnd, found_title = _find_window_handle(["Brave"])
+        hwnd, found_title = _find_window_handle([_automation_browser_name()])
     if found_title and not win_title:
         win_title = found_title
 
@@ -4410,6 +4523,7 @@ def _ensure_pptx_has_all_slides(
         return 0, f"No se pudo validar conteo de diapositivas: {exc}"
 
 
+@_with_web_ai_browser
 def build_with_heavy_web_ai(
     user_goal: str,
     target_ai: str = "gemini",
@@ -4433,8 +4547,14 @@ def build_with_heavy_web_ai(
     if not goal:
         return "Debes indicar `user_goal` describiendo qué archivo o proyecto quieres construir."
 
+    # No transformar código web en una presentación por omisión del formato.
+    if re.search(r"[\w-]+\.(?:html?|css|jsx?|tsx?)\b|\b(?:archivo|página|pagina|sitio)\s+(?:web|html|css|javascript|typescript)\b", goal, re.I):
+        return json.dumps({"error": "Esta tarea solicita código web. Crea el archivo con su nombre y extensión exactos mediante run_terminal_command en current_project_directory; no uses la fábrica de documentos ni sustituyas el entregable por PPTX."}, ensure_ascii=False)
     ai_key = _normalize_target_ai(target_ai)
-    out_fmt = _normalize_output_format(output_format)
+    try:
+        out_fmt = _normalize_output_format(output_format)
+    except ValueError:
+        return json.dumps({"error": "Formato no compatible. Usa las herramientas de archivos para crear el formato solicitado; no se generó ningún archivo."}, ensure_ascii=False)
     max_wait_sec = max(20, min(int(wait_seconds), 600))
     slides_count = max(3, min(int(pages_or_slides), 40))
 
@@ -4474,7 +4594,7 @@ def build_with_heavy_web_ai(
         brave_focused = brave_focused or focused
         mon_rect = {"left": left, "top": top, "width": win_w, "height": win_h}
 
-    cap_init = capture_monitor_image(0, target_window_title="Brave", enqueue=False)
+    cap_init = capture_monitor_image(0, target_window_title=_automation_browser_name(), enqueue=False)
     if cap_init.get("ok"):
         brave_mon_idx = int(cap_init.get("monitor_index") or 0)
         if cap_init.get("monitor"):
@@ -4494,7 +4614,7 @@ def build_with_heavy_web_ai(
                 "Message ChatGPT para escribir el prompt. Si hay un popup o banner bloqueando la pantalla, "
                 "devuelve status='popup' con las coordenadas del botón Cerrar o X."
             ),
-            target_window_title="Brave",
+            target_window_title=_automation_browser_name(),
         )
         if loc.get("ok") and loc.get("status") == "popup" and loc.get("found"):
             with GUI_LOCK:
@@ -4504,7 +4624,7 @@ def build_with_heavy_web_ai(
             loc = _vision_locate_on_screen(
                 brave_mon_idx,
                 "caja de texto donde dice Pregunta a Gemini / Ask Gemini / Enter a prompt para escribir el prompt",
-                target_window_title="Brave",
+                target_window_title=_automation_browser_name(),
             )
 
         if loc.get("ok") and loc.get("found"):
@@ -4543,7 +4663,7 @@ def build_with_heavy_web_ai(
 
     # 3. Espera inteligente de hasta max_wait_sec (600s) con Pixel-Diff local (0 API mientras cambia)
     time.sleep(2.0)
-    prev_cap = capture_monitor_image(brave_mon_idx, target_window_title="Brave", enqueue=False)
+    prev_cap = capture_monitor_image(brave_mon_idx, target_window_title=_automation_browser_name(), enqueue=False)
     prev_img: Image.Image | None = None
     if prev_cap.get("ok") and Path(str(prev_cap["path"])).exists():
         try:
@@ -4587,7 +4707,7 @@ def build_with_heavy_web_ai(
                 final_artifact = None
 
         # b) Calcular Pixel-Diff local (0 tokens API)
-        curr_cap = capture_monitor_image(brave_mon_idx, target_window_title="Brave", enqueue=False)
+        curr_cap = capture_monitor_image(brave_mon_idx, target_window_title=_automation_browser_name(), enqueue=False)
         curr_img: Image.Image | None = None
         if curr_cap.get("ok") and Path(str(curr_cap["path"])).exists():
             try:
@@ -4620,7 +4740,7 @@ def build_with_heavy_web_ai(
                     "Devuelve JSON con status ('generating' | 'finished_download' | 'finished_code' | 'error') "
                     "y las coordenadas [x, y] (0-1000) del botón de Descargar o Copiar código si existe."
                 ),
-                target_window_title="Brave",
+                target_window_title=_automation_browser_name(),
             )
             st = vis_status.get("status", "")
 
@@ -4757,7 +4877,7 @@ def build_with_heavy_web_ai(
     # 6. Regla estricta de entregables: SOLO archivo final en PENDING_FILES y 1 sola captura limpia DPI-aware
     pop_pending_files()
     pop_pending_images()
-    final_cap = capture_monitor_image(brave_mon_idx, target_window_title="Brave", enqueue=True)
+    final_cap = capture_monitor_image(brave_mon_idx, target_window_title=_automation_browser_name(), enqueue=True)
     final_screenshot_note = (
         f"Captura limpia ({final_cap['label']} | {final_cap['width']}x{final_cap['height']}) -> {final_cap['path']}"
         if final_cap.get("ok")
@@ -5012,7 +5132,7 @@ def open_and_automate_brave_service(
         vis_thumb = _vision_locate_on_screen(
             0,
             f"miniatura o título del primer video relevante de YouTube para '{youtube_query}' para hacer clic y reproducirlo",
-            target_window_title="Brave",
+            target_window_title=_automation_browser_name(),
         )
         if vis_thumb.get("ok") and vis_thumb.get("found"):
             with GUI_LOCK:
@@ -5026,7 +5146,7 @@ def open_and_automate_brave_service(
     if send_to_whatsapp:
         pop_pending_images()
     screenshot_status = take_screenshot(
-        target_window_title="Brave",
+        target_window_title=_automation_browser_name(),
         send_to_whatsapp=send_to_whatsapp,
     )
     focus_label = "Brave real enfocado" if focused else "Brave lanzado en sesión del usuario"
@@ -5260,7 +5380,8 @@ def git_project_manager(
     Returns:
         Resultado de los comandos Git ejecutados en el repositorio.
     """
-    target_dir = Path(repo_path.strip()).expanduser() if (repo_path or "").strip() else BASE_DIR
+    workspace = current_project_directory()
+    target_dir = Path(repo_path.strip()).expanduser() if (repo_path or "").strip() else workspace
     if not target_dir.exists() or not target_dir.is_dir():
         return f"El directorio del repositorio no existe: {target_dir}"
 
@@ -5283,6 +5404,10 @@ def git_project_manager(
         rc_check, out_check = _run_git(["rev-parse", "--is-inside-work-tree"])
         if rc_check != 0 or out_check.strip().lower() != "true":
             return f"'{target_dir}' no es un repositorio Git válido: {out_check}"
+        if workspace.resolve() != BASE_DIR.resolve() and target_dir.resolve() == workspace.resolve():
+            rc_root, git_root = _run_git(["rev-parse", "--show-toplevel"])
+            if rc_root != 0 or Path(git_root.strip()).resolve() != workspace.resolve():
+                return f"La carpeta del proyecto requiere un repositorio Git propio: {workspace}. Inicializa Git en esa carpeta antes de gestionar sus cambios."
 
         if act == "status":
             _, st = _run_git(["status", "-sb"])

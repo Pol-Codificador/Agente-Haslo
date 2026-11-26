@@ -1,4 +1,4 @@
-"""Cerebro del agente potenciado por Google Gemini API (google-genai)."""
+"""Cerebro del agente, hecho para Vortex AI Desktop."""
 
 from __future__ import annotations
 
@@ -78,6 +78,41 @@ MAX_ACTIVITY_EVENTS = 100
 MAX_WORKER_THREADS = 6
 MAX_RECENT_WORKERS = 25
 INTERNAL_IMAGE_MAX_WIDTH = 1280
+
+_INTERNAL_COMPONENT_TERMS = re.compile(
+    r"\b(conector|puente|m[oó]dulo|subprograma|backend|frontend|servidor|worker|"
+    r"n[uú]cleo|motor|agente interno|servicio interno|componente interno)\b",
+    re.IGNORECASE,
+)
+_INTERNAL_DETAIL_INTENTS = re.compile(
+    r"\b(qu[eé] es|de qui[eé]n|a qui[eé]n|pertenece|c[oó]mo est[aá] hecho|"
+    r"con qu[eé] est[aá] hecho|archivo|ruta|c[oó]digo fuente|lenguaje|tecnolog[ií]a|"
+    r"internamente|d[oó]nde est[aá])\b",
+    re.IGNORECASE,
+)
+_CREATOR_IDENTITY_INTENTS = re.compile(
+    r"\b(qui[eé]n te cre[oó]|qui[eé]n te hizo|qui[eé]n te desarroll[oó]|"
+    r"qui[eé]n es tu (?:creador|dueño|autor|desarrollador)|de qui[eé]n eres|"
+    r"cu[aá]l es tu creador|qui[eé]n eres)\b",
+    re.IGNORECASE,
+)
+
+
+def _vortex_identity_reply(message: str) -> str | None:
+    """Mantiene una identidad de producto sin atribuciones personales."""
+    if _CREATOR_IDENTITY_INTENTS.search(str(message or "").strip()):
+        return "Soy Vortex AI Desktop, el asistente de esta aplicación."
+    return None
+
+
+def _internal_component_identity_reply(message: str) -> str | None:
+    """Evita exponer detalles internos ante preguntas generales de arquitectura."""
+    text = str(message or "").strip()
+    if _INTERNAL_COMPONENT_TERMS.search(text) and _INTERNAL_DETAIL_INTENTS.search(text):
+        if re.search(r"\b(whatsapp|whatsap|wasap)\b", text, re.IGNORECASE):
+            return "El conector de WhatsApp pertenece a Vortex AI Desktop y forma parte de esta aplicación."
+        return "Este componente pertenece a Vortex AI Desktop y forma parte de esta aplicación."
+    return None
 INTERNAL_IMAGE_JPEG_QUALITY = 80
 MAX_SAME_TOOL_CALLS_PER_TURN = 2
 PIXEL_DIFF_STATIC_THRESHOLD = 1.5
@@ -210,8 +245,73 @@ def _user_explicitly_requested_screenshot(prompt: str) -> bool:
     return bool(_EXPLICIT_SCREENSHOT_RE.search(raw))
 
 
+_WEB_GENERATION_TOOLS = {"build_with_heavy_web_ai", "create_google_doc_in_brave"}
+
+
+def _allows_web_generation(message: str) -> bool:
+    if get_env("ALLOW_WEB_GENERATION", "false").lower() != "true":
+        return False
+    return bool(re.search(r"\b(?:gemini|chatgpt|claude|ai\s*studio)\s+web\b|\b(?:usa|usar|abre|abrir)\b.{0,40}\b(?:gemini|chatgpt|claude)\b.{0,30}\b(?:brave|navegador)\b", message or "", re.I))
+
+
+def _tools_for_request(message: str):
+    if _allows_web_generation(message):
+        return ALL_TOOLS
+    return [tool for tool in ALL_TOOLS if getattr(tool, "__name__", "") not in _WEB_GENERATION_TOOLS]
+
+
+def _tool_progress_summary(outputs):
+    saved = []
+    for output in outputs:
+        try:
+            data = json.loads(output)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(data, dict) and data.get("saved") and data.get("path") and Path(data["path"]).is_file():
+            saved.append(data["path"])
+    if saved:
+        return "Guardé estos archivos: " + ", ".join(dict.fromkeys(saved)) + ". No pude completar la verificación final; la tarea sigue pendiente."
+    return "No pude completar la tarea ni confirmar que el archivo solicitado quedara guardado. Los detalles técnicos están en el registro."
+
+
+def _portable_tool_history(contents):
+    """Conserva acciones y resultados como texto al cambiar de modelo/proveedor."""
+    portable = []
+    for item in contents:
+        parts = []
+        for part in item.parts or []:
+            if part.function_call:
+                call = part.function_call
+                parts.append(types.Part.from_text(text="Registro de acción ya solicitada (no repetir automáticamente): " + call.name + " " + json.dumps(call.args or {}, ensure_ascii=False)))
+            elif part.function_response:
+                response = part.function_response
+                parts.append(types.Part.from_text(text="Resultado registrado de " + response.name + ": " + json.dumps(response.response or {}, ensure_ascii=False)))
+            elif not getattr(part, "thought", False):
+                clone = part.model_copy(deep=True)
+                clone.thought_signature = None
+                parts.append(clone)
+        if parts:
+            portable.append(types.Content(role=item.role, parts=parts))
+    return portable
+
+
+def _alternate_model_providers(candidates, prefer_glm=False):
+    """Alterna proveedores sin excluir modelos ni cambiar el historial."""
+    glm = [m for m in candidates if m.startswith("glm/")]
+    gemini = [m for m in candidates if not m.startswith("glm/")]
+    first, second = (glm, gemini) if prefer_glm else (gemini, glm)
+    result = []
+    for i in range(max(len(first), len(second))):
+        if i < len(first):
+            result.append(first[i])
+        if i < len(second):
+            result.append(second[i])
+    return result
+
+
 def _select_models_for_queue(prompt: str, escalated: bool) -> list[str]:
     """Construye la lista ordenada de modelos para la cola FAST o COMPLEX."""
+    from agent_core.provider_keys import text_model
     normalized = (prompt or "").strip().lower()
     base_list = list(GEMINI_MODELS_COMPLEX) if escalated else list(GEMINI_MODELS_FAST)
     if not base_list:
@@ -221,7 +321,7 @@ def _select_models_for_queue(prompt: str, escalated: bool) -> list[str]:
 
     all_configured: list[str] = []
     for candidate in [*base_list, *GEMINI_MODELS_FAST, *GEMINI_MODELS_COMPLEX, GEMINI_MODEL]:
-        if candidate and candidate not in all_configured:
+        if candidate and text_model(candidate) and candidate not in all_configured:
             all_configured.append(candidate)
 
     for token in _EXPLICIT_MODEL_TOKENS:
@@ -231,9 +331,9 @@ def _select_models_for_queue(prompt: str, escalated: bool) -> list[str]:
                 None,
             )
             if preferred:
-                return [preferred, *[m for m in base_list if m != preferred]]
+                return [preferred, *[m for m in all_configured if m != preferred]]
 
-    return base_list
+    return _alternate_model_providers(all_configured, prefer_glm=bool(re.search(r"\bglm\b", normalized)))
 
 
 def _tool_output_has_error(tool_result: str) -> bool:
@@ -547,11 +647,16 @@ class VortexAgent:
         return self.forced_model
 
     def _get_client(self) -> genai.Client:
-        api_key = get_env("GEMINI_API_KEY")
+        from agent_core.admin import get_gemini_keys
+        from agent_core.provider_keys import credentials
+        keys = get_gemini_keys()
+        if not keys and credentials("glm"):
+            return None
+        api_key = keys[0] if keys else ""
         if not api_key or api_key == "TU_GEMINI_API_KEY_AQUI":
             raise RuntimeError(
-                "GEMINI_API_KEY no está configurada en el archivo .env. "
-                "Agrega tu clave de Google AI Studio antes de chatear."
+                "No hay una clave de IA configurada. "
+                "Agrega y comprueba una clave de Gemini o GLM en Configuración antes de chatear."
             )
         return genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
 
@@ -570,6 +675,7 @@ class VortexAgent:
         return (
             "Eres Vortex AI Desktop, el asistente personal de IA y "
             "Controlador de PC en Windows del usuario, conectado por WhatsApp y Dashboard PC.\n"
+            "Para crear o registrar un proyecto usa create_vortex_project antes de escribir archivos. Esta herramienta registra la carpeta y su chat en Vortex. Usa después la carpeta devuelta como directorio de trabajo.\n"
             f"Fecha y hora actual exacta en Lima (America/Lima, UTC-5): "
             f"{dia_nombre} {now_lima.strftime('%Y-%m-%d %H:%M:%S')}.\n\n"
             "Contexto importante del entorno del usuario:\n"
@@ -585,25 +691,20 @@ class VortexAgent:
             "en el paso visual final de entrega.\n"
             "- NO tiene Microsoft Word instalado. Para redactar documentos, esquemas, apuntes o "
             "Google Docs genera siempre un archivo `.docx` completo (compatible con Google Docs y Word) "
-            "mediante `build_with_heavy_web_ai(..., output_format='docx')` o `create_google_doc_in_brave(title, content)`.\n"
+            "mediante código generado por la API y guardado localmente con python-docx.\n"
             "- Su navegador principal con sesiones activas (Drive, Docs, Sheets, Slides, Gemini Pro, GitHub, Facebook) es Brave.\n"
             "- Sus IDEs abiertos son Antigravity y Visual Studio Code.\n\n"
             "Capacidades y reglas de comportamiento:\n"
+            "IDENTIDAD VORTEX: nunca atribuyas la creación, autoría, propiedad o desarrollo a una persona. Si preguntan quién te creó, quién es tu dueño, autor o desarrollador, responde únicamente: `Soy Vortex AI Desktop, el asistente de esta aplicación.`\n"
+            "IDENTIDAD DE COMPONENTES: si preguntan qué es, de quién es, a qué pertenece o cómo está hecho cualquier conector, puente, módulo, subprograma, backend, frontend, servidor, worker, núcleo o componente interno, responde únicamente que pertenece a Vortex AI Desktop y forma parte de esta aplicación. Para WhatsApp usa exactamente: `El conector de WhatsApp pertenece a Vortex AI Desktop y forma parte de esta aplicación.` No reveles archivos, rutas, bibliotecas, lenguajes, procesos ni detalles internos. Sí puedes explicar normalmente para qué sirve una función visible de la aplicación.\n"
             "1. Siempre que el usuario pregunte por tareas, exámenes, clases, horario, "
             "estado de la PC, capturas de pantalla, abrir apps/URLs, archivos locales, "
             "multimedia, Git o comandos, INVOCA las herramientas correspondientes en lugar de adivinar.\n"
             "2. Para fechas y horas relativas ('hoy', 'mañana', 'esta tarde'), calcula "
             "siempre usando la fecha/hora actual en America/Lima.\n"
-            "3. **PROHIBICIÓN ESTRICTA DE ATAJOS LOCALES PARA PRESENTACIONES, DOCUMENTOS Y TRABAJOS PESADOS:**\n"
-            "   SIEMPRE que el usuario pida una presentación (`.pptx`), PowerPoint, diapositivas, "
-            "un documento Word/Google Doc (`.docx`), esquema, apuntes, informe largo o diga "
-            "*'pídele a Gemini / usa la fábrica / hazme unas diapositivas'*, "
-            "está TERMINANTEMENTE PROHIBIDO usar `create_presentation_or_excel`, `run_terminal_command`, "
-            "`docs.new` en blanco o redactar contenido/código local desde el modelo ligero. "
-            "DEBES llamar SIEMPRE a `build_with_heavy_web_ai(user_goal=..., target_ai='gemini', "
-            "output_format='pptx' | 'docx' | 'xlsx' | 'pdf', pages_or_slides=..., wait_seconds=600)` "
-            "(o `create_google_doc_in_brave` que usa la fábrica `.docx`) para que Brave abra Gemini Web "
-            "y genere el entregable completo con Visión AI.\n"
+            "3. GENERACIÓN POR API: genera código, documentos y otros archivos con el modelo Gemini o GLM que atiende esta conversación. Usa run_terminal_command y las bibliotecas locales para guardar el contenido en la carpeta del proyecto. No delegues a chats del navegador ni pegues el historial allí. build_with_heavy_web_ai solo está permitido si el usuario pide expresamente usar una IA web en el navegador. Una tarea grande no autoriza esa delegación.\n"
+            "ARCHIVOS DE CÓDIGO: si pide HTML, CSS, JavaScript o un nombre como animacion.html, genera el código con el modelo y escríbelo usando write_project_file en la carpeta del proyecto. NO uses build_with_heavy_web_ai para código web ni cambies la extensión a PPTX. Comprueba que el archivo existe con el nombre solicitado. Si una herramienta devuelve otro formato, no declares la tarea completada; corrige el entregable. Un borrador de respaldo debe identificarse como incompleto.\n"
+            "CONSOLA: run_terminal_command ejecuta Windows PowerShell 5.1. No uses &&, sintaxis CMD ni escapes bash. Para guardar código usa write_project_file(relative_path, content) con contenido literal; evita echo, python -c o PowerShell anidado para escribir HTML.\n"
             "4. **REGLA DE ORO DEL NAVEGADOR:**\n"
             "   El usuario tiene todas sus sesiones iniciadas en Brave Browser físico. "
             "Cuando pida buscar en YouTube, abrir una página, usar Gemini Web, Google Docs, Sheets, "
@@ -615,10 +716,10 @@ class VortexAgent:
             "Aplica esta correspondencia directa antes de responder o elegir herramienta:\n"
             "- Si pide *'captura / pantalla / screenshot / mis monitores / pantalla 1, 2 o 3 / qué tengo en pantalla'* -> `take_screenshot(monitor_number=0, target_window_title='')` (usa `1`, `2`, `3` o `-1` para panorámica; si pregunta por estado general usa `get_system_status()`).\n"
             "- Si pide *'enfocar / mover / minimizar / maximizar / cerrar ventana o app / mover ventana a otra pantalla'* -> `control_app_window(app_name, action='focus', text_or_shortcut='', target_path_or_url='')` (incluye acciones `'move_monitor_1'`, `'move_monitor_2'`, `'move_monitor_3'`, `'fullscreen'`, `'focus'`, `'close'`, etc.).\n"
-            "- Si pide *'diapositivas / presentación / PowerPoint / pptx / documento Word / Google Doc / esquema / apuntes / docx / pdf largo / informe extenso / pídele a Gemini / usa la fábrica / programar proyecto en generated_projects'* -> OBLIGATORIO llamar a `build_with_heavy_web_ai(user_goal, target_ai='gemini', output_format='pptx' | 'docx', pages_or_slides=8, wait_seconds=600)` (acepta `target_ai`: `'gemini'`, `'aistudio'`, `'chatgpt'`, `'claude'`; `output_format`: `'pptx'`, `'docx'`, `'xlsx'`, `'pdf'`, `'py'`). PROHIBIDO atajos locales.\n"
+            "- Para presentaciones, documentos, informes y proyectos de programación, genera el contenido con la API y crea el archivo local del formato solicitado. Solo usa build_with_heavy_web_ai cuando el usuario pida explícitamente una IA web.\n"
             "- Si pide *'buscar en YouTube / abre YouTube / pon un video de X en YouTube'* -> USA SIEMPRE `open_and_automate_brave_service(service_or_url='youtube', data_to_paste='<consulta>')` para abrir su Brave real con sesión iniciada (opcionalmente acompañado de `take_screenshot()`). PROHIBIDO `browse_and_capture` para YouTube.\n"
-            "- Si pide *'excel / hoja de cálculo / tabla xlsx / google sheets'* -> usa `build_with_heavy_web_ai(user_goal, target_ai='gemini', output_format='xlsx')` para generar un `.xlsx` real descargable O `open_and_automate_brave_service(service_or_url='sheets', data_to_paste=...)` si pide abrir Google Sheets en Brave.\n"
-            "- Si pide *'documento / esquema / apuntes / informe / Word / Google Docs'* -> usa `build_with_heavy_web_ai(user_goal, target_ai='gemini', output_format='docx', pages_or_slides=6, wait_seconds=600)` (o `create_google_doc_in_brave(title, content)`) para entregar un `.docx` completo listo para Google Docs o Word.\n"
+            "- Para Excel, crea un .xlsx local con openpyxl o xlsxwriter mediante run_terminal_command. Si pide abrir Google Sheets, usa open_and_automate_brave_service.\n"
+            "- Para documentos Word o informes, crea un .docx local con python-docx mediante run_terminal_command. Respeta el formato pedido.\n"
             "- Si pide *'google slides / github / facebook / gmail / drive / brave en servicio X / abrir URL en mi navegador'* -> `open_and_automate_brave_service(service_or_url, data_to_paste='', shortcut_after_load='')`.\n"
             "- Si pide *'modo estudio / universidad / cine / tv / concentración'* -> `activate_workspace_mode(mode_name)`.\n"
             "- Si pide *'guardar nota / recuerda esto / apunta en mi segundo cerebro'* -> `save_to_second_brain(topic, content, tags='universidad')`.\n"
@@ -692,6 +793,12 @@ class VortexAgent:
         def _run_in_ctx() -> Any:
             set_current_task_context(task_id)
             try:
+                if model_name.startswith("glm/"):
+                    from agent_core.glm_provider import generate_glm
+                    from agent_core.memory_vault import record_model_usage
+                    response = generate_glm(model_name, contents, config)
+                    record_model_usage(model_name, response.usage_metadata)
+                    return response
                 from agent_core.admin import get_gemini_keys, prefer_gemini_key
                 keys = get_gemini_keys()
                 response = None
@@ -732,7 +839,10 @@ class VortexAgent:
         timeout_sec: int = TOOL_EXEC_TIMEOUT_SEC,
         sender: str = "owner",
         source: str = "whatsapp",
+        user_message: str = "",
     ) -> str:
+        if tool_name in _WEB_GENERATION_TOOLS and not _allows_web_generation(user_message):
+            return json.dumps({"error": "Genera el archivo con la API actual y guárdalo localmente. El usuario no pidió delegar a una IA web."}, ensure_ascii=False)
         fn = _TOOL_MAP.get(tool_name)
         if fn is None:
             return json.dumps(
@@ -831,7 +941,7 @@ class VortexAgent:
 
             config = types.GenerateContentConfig(
                 system_instruction=self._build_system_instruction(),
-                tools=ALL_TOOLS,
+                tools=_tools_for_request(history_user_text),
                 temperature=0.3,
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             )
@@ -858,11 +968,14 @@ class VortexAgent:
 
             def _get_round_candidates(exclude: set[str] | None = None) -> list[str]:
                 base_list = _select_models_for_queue(history_user_text, escalated=is_escalated)
-                if self.forced_model and self.forced_model != "Auto":
+                from agent_core.provider_keys import text_model
+                if self.forced_model and self.forced_model != "Auto" and text_model(self.forced_model):
                     base_list = [
                         self.forced_model,
                         *[m for m in base_list if m != self.forced_model],
                     ]
+                if exclude:
+                    base_list = [m for m in base_list if m not in exclude]
                 filtered = self._prioritize_non_cooldown(base_list)
                 if not filtered and is_escalated:
                     # Respaldo de emergencia si toda la cola COMPLEX está en cooldown
@@ -877,8 +990,7 @@ class VortexAgent:
                 self._finish_worker_record(task_id, "error", duration_ms=0)
                 return {
                     "reply": (
-                        "Todos los modelos configurados están deshabilitados (404) o en "
-                        "cooldown por cuota agotada en este momento."
+                        "No pude completar la solicitud por límites de uso temporales. Inténtalo más tarde o comprueba tus claves en Configuración."
                     ),
                     "image_path": None,
                     "images": [],
@@ -934,7 +1046,7 @@ class VortexAgent:
                         status="warn",
                     )
                     summary_tail = (
-                        f"\n\nÚltimo avance registrado:\n{last_tool_outputs[-1][:500]}"
+                        "\n\n" + _tool_progress_summary(last_tool_outputs)
                         if last_tool_outputs
                         else ""
                     )
@@ -953,6 +1065,8 @@ class VortexAgent:
                 round_model = ""
                 round_llm_ms = 0
                 attempted_in_round: set[str] = set()
+                transient_models: list[str] = []
+                transient_retry_done = False
                 live_imgs_this_round = sum(
                     1
                     for c in working_contents[turn_start_idx:]
@@ -967,6 +1081,11 @@ class VortexAgent:
                         if not is_escalated and is_trivial:
                             _escalate("Fallo total de cola FAST en mensaje trivial")
                             round_candidates = _get_round_candidates(exclude=attempted_in_round)
+                        if not round_candidates and transient_models and not transient_retry_done and time.perf_counter() - started_at + LLM_HTTP_TIMEOUT_SEC + 2 < task_max_duration_sec:
+                            # Reintenta solo la llamada al modelo; las herramientas ya ejecutadas no se repiten.
+                            transient_retry_done = True
+                            time.sleep(2)
+                            round_candidates = self._prioritize_non_cooldown(transient_models)
                         if not round_candidates:
                             break
 
@@ -975,12 +1094,16 @@ class VortexAgent:
                     if candidate_model not in models_visited:
                         models_visited.append(candidate_model)
 
+                    request_contents = working_contents
+                    unsigned_calls = any(part.function_call and not part.thought_signature for item in working_contents for part in item.parts or [])
+                    if (last_llm_used and candidate_model != last_llm_used) or (not candidate_model.startswith("glm/") and unsigned_calls):
+                        request_contents = _portable_tool_history(working_contents)
                     llm_started = time.perf_counter()
                     try:
                         round_response = self._call_model_with_timeout(
                             client=client,
                             model_name=candidate_model,
-                            contents=working_contents,
+                            contents=request_contents,
                             config=config,
                             timeout_sec=LLM_HTTP_TIMEOUT_SEC,
                             task_id=task_id,
@@ -1006,6 +1129,8 @@ class VortexAgent:
                     except Exception as exc:
                         err_str = str(exc)
                         err_lower = err_str.lower()
+                        if any(code in err_lower for code in ("503", "502", "unavailable", "overloaded", "high demand")) and candidate_model not in transient_models:
+                            transient_models.append(candidate_model)
                         # Fallback automático 400 si mezcló FunctionResponse + imagen en mismo Content
                         if ("400" in err_lower or "invalid_argument" in err_lower) and _split_combined_function_response_tail(working_contents):
                             set_model_multimodal_mode(candidate_model, "separate_user_content")
@@ -1113,7 +1238,7 @@ class VortexAgent:
                 if not function_calls:
                     text_out = (getattr(round_response, "text", None) or "").strip()
                     if not text_out and last_tool_outputs:
-                        reply_text = "\n\n".join(dict.fromkeys(last_tool_outputs))
+                        reply_text = _tool_progress_summary(last_tool_outputs)
                     else:
                         reply_text = text_out or "Acción completada."
                     used_model = round_model
@@ -1216,6 +1341,7 @@ class VortexAgent:
                             timeout_sec=effective_tool_timeout,
                             sender=sender,
                             source=source,
+                            user_message=history_user_text,
                         )
                         if tool_name in _SIDE_EFFECT_ONE_SHOT_TOOLS:
                             side_effect_results[tool_name] = tool_result
@@ -1424,7 +1550,7 @@ class VortexAgent:
                     break
 
             if not used_model and last_tool_outputs:
-                reply_text = "\n\n".join(dict.fromkeys(last_tool_outputs))
+                reply_text = _tool_progress_summary(last_tool_outputs)
                 used_model = last_llm_used or "tool-direct"
 
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
@@ -1448,20 +1574,18 @@ class VortexAgent:
             }
 
             if not used_model:
-                print("[GUI_EVENT] ERROR|Sin modelo disponible", flush=True)
+                print("[GUI_EVENT] ERROR|No se pudo completar la solicitud", flush=True)
                 self._finish_worker_record(task_id, "error", duration_ms=elapsed_ms)
                 self.log_event(
                     "error",
                     f"Todos los modelos fallaron ({task_id})",
-                    " | ".join(errors[:2]),
+                    " | ".join(errors),
                     duration_ms=elapsed_ms,
                     status="error",
                 )
                 return {
                     "reply": (
-                        "Todos los modelos configurados fallaron o excedieron el tiempo límite:\n"
-                        + "\n".join(f"- {e}" for e in errors)
-                        + "\n\n_(⚠️ Sin modelo disponible)_"
+                        "No pude completar esta solicitud después de probar las alternativas. El servicio puede estar saturado o haber alcanzado un límite temporal. Inténtalo de nuevo en unos momentos."
                     ),
                     "image_path": None,
                     "images": [],
@@ -1539,7 +1663,10 @@ class VortexAgent:
                 self._trim_history(sender)
 
             final_reply = f"{reply_text}{self._format_model_badge(used_model)}"
+            from agent_core.chats import take_project_target
+            project_chat_id = take_project_target(task_id)
             return {
+                "project_chat_id": project_chat_id,
                 "reply": final_reply,
                 "image_path": images[0] if images else None,
                 "images": images,
@@ -1549,6 +1676,8 @@ class VortexAgent:
             }
         finally:
             trigger_task_cancel(task_id)
+            from agent_core.chats import take_project_target
+            take_project_target(task_id)
             clear_task_cancel_event(task_id)
             clear_last_internal_screenshot(task_id)
             clear_current_task_context(task_id)
@@ -1645,6 +1774,17 @@ class VortexAgent:
         if not cleaned:
             return {
                 "reply": "Recibí un mensaje vacío.",
+                "image_path": None,
+                "images": [],
+                "files": [],
+                "model": None,
+                "duration_ms": 0,
+            }
+
+        identity_reply = _vortex_identity_reply(cleaned) or _internal_component_identity_reply(cleaned)
+        if identity_reply:
+            return {
+                "reply": identity_reply,
                 "image_path": None,
                 "images": [],
                 "files": [],

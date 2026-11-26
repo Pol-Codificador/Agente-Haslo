@@ -22,11 +22,13 @@ agent_core/memory_vault.db*
 
 # Secretos, variables de entorno y credenciales
 .env
+.provider_keys.json*
 .env.*
 !.env.example
 credentials.json
 client_secret*.json
 token.json
+google_connection.json
 *.pem
 *.key
 *.p12
@@ -37,6 +39,7 @@ token.json
 temp/*
 !temp/.gitkeep
 generated_projects/
+pruebaborrar/
 
 # Carpetas locales de skills/configuración del IDE
 .agent/

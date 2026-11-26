@@ -56,6 +56,11 @@ GOOGLE_SCOPES: list[str] = [
 
 def get_env(name: str, default: str = "") -> str:
     """Obtiene una variable de entorno recargando .env si es necesario."""
+    if name in ("GEMINI_API_KEY", "GEMINI_API_KEYS") and (BASE_DIR / ".provider_keys.json").exists():
+        import json
+        from agent_core.provider_keys import credentials
+        keys = [key for _, key, _ in credentials("gemini")]
+        return (keys[0] if keys else "") if name == "GEMINI_API_KEY" else json.dumps(keys)
     load_dotenv(dotenv_path=ENV_PATH, override=True)
     return os.getenv(name, default).strip()
 

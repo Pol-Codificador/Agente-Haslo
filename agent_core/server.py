@@ -1,4 +1,4 @@
-"""Servidor HTTP local FastAPI y Panel de Vortex AI Desktop para el Vortex AI Desktop."""
+"""Servidor local y panel hechos para Vortex AI Desktop."""
 
 from __future__ import annotations
 
@@ -28,6 +28,8 @@ from typing import Any
 
 import psutil
 from fastapi import FastAPI, HTTPException
+from fastapi import Depends
+from agent_core.admin import require_local
 from agent_core.memory_vault import get_model_usage
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
@@ -81,16 +83,34 @@ from agent_core.admin import router as admin_router
 app.include_router(admin_router)
 from agent_core.chats import router as chats_router, begin_turn, end_turn
 app.include_router(chats_router)
+from agent_core.provider_keys import router as keys_router, apply_catalog
+app.include_router(keys_router)
+apply_catalog()
 
 
 @app.get("/admin.css")
 def admin_styles():
-    return FileResponse(BASE_DIR / "agent_core" / "admin.css", media_type="text/css")
+    return FileResponse(BASE_DIR / "agent_core" / "admin.css", media_type="text/css", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/admin.js")
 def admin_scripts():
-    return FileResponse(BASE_DIR / "agent_core" / "admin.js", media_type="application/javascript")
+    return FileResponse(BASE_DIR / "agent_core" / "admin.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/keys.js")
+def key_scripts():
+    return FileResponse(BASE_DIR / "agent_core" / "keys.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/assets/vortex-ai-logo.png")
+def app_logo():
+    return FileResponse(BASE_DIR / "assets" / "vortex-ai-logo.png", media_type="image/png")
+
+
+@app.get("/whatsapp.js")
+def whatsapp_scripts():
+    return FileResponse(BASE_DIR / "agent_core" / "whatsapp.js", media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 def cleanup_old_temp_media(max_age_sec: int = 86400, temp_dir: Path | None = None) -> int:
@@ -131,7 +151,10 @@ _WA_STATE: dict[str, Any] = {
     "detail": "Esperando conexión del puente WhatsApp",
     "qr_text": "",
     "updated_at": "",
+    "account_phone": "",
+    "account_name": "",
 }
+_WA_OPERATION_LOCK = threading.Lock()
 
 
 class ChatRequest(BaseModel):
@@ -167,6 +190,8 @@ class WhatsAppStateRequest(BaseModel):
     status: str = Field(..., min_length=1)
     detail: str = Field(default="")
     qr_text: str = Field(default="")
+    account_phone: str = ""
+    account_name: str = ""
 
 
 class BrainNoteRequest(BaseModel):
@@ -188,6 +213,7 @@ class WhatsAppContactRequest(BaseModel):
 
 class AgentResponse(BaseModel):
     reply: str
+    chat_id: str | None = None
     image_path: str | None = None
     images: list[str] = Field(default_factory=list)
     files: list[str] = Field(default_factory=list)
@@ -362,6 +388,9 @@ def _delete_vip_contact(jid: str) -> bool:
 
 
 def _all_configured_models() -> list[str]:
+    from agent_core.provider_keys import list_keys
+    if not list_keys():
+        return []
     ordered: list[str] = []
     for m in [*GEMINI_MODELS_FAST, *GEMINI_MODELS_COMPLEX, GEMINI_MODEL, *DISCARDED_MODELS, *DEAD_MODELS]:
         if m and m not in ordered:
@@ -381,7 +410,7 @@ def serve_dashboard() -> HTMLResponse:
     if not DASHBOARD_HTML_PATH.exists():
         raise HTTPException(status_code=404, detail="dashboard.html no encontrado.")
     html = DASHBOARD_HTML_PATH.read_text(encoding="utf-8")
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/preview-image")
@@ -413,7 +442,7 @@ def health_check() -> dict[str, str]:
     """Verifica el estado del servidor, modelo configurado y hora local en Lima."""
     return {
         "status": "ok",
-        "model": get_env("GEMINI_MODEL", GEMINI_MODEL) or GEMINI_MODEL,
+        "model": GEMINI_MODEL,
         "active_model_mode": agent.forced_model,
         "lima_time": datetime.now(LIMA_TZ).isoformat(),
     }
@@ -466,15 +495,10 @@ def api_status(brain_q: str = "") -> dict[str, Any]:
     else:
         effective_wa_status = wa_snapshot["status"]
         wa_detail = wa_snapshot["detail"]
-        if effective_wa_status in ("unknown", "disconnected"):
-            try:
-                uptime_sec = time.time() - wa_procs[0].create_time()
-            except Exception:
-                uptime_sec = 99
-            effective_wa_status = "connecting" if uptime_sec < 10 else "connected"
-            wa_detail = (
-                "Sincronizando sesión..." if effective_wa_status == "connecting" else "Conectado"
-            )
+        # Un proceso activo no demuestra que WhatsApp haya establecido sesión.
+        if effective_wa_status == "unknown":
+            effective_wa_status = "connecting"
+            wa_detail = "Esperando conexión del puente con WhatsApp"
 
     if effective_wa_status == "connected":
         global_status = "active"
@@ -720,6 +744,8 @@ def update_whatsapp_state(payload: WhatsAppStateRequest) -> dict[str, str]:
         _WA_STATE["detail"] = payload.detail.strip()
         _WA_STATE["qr_text"] = payload.qr_text or ""
         _WA_STATE["updated_at"] = datetime.now(LIMA_TZ).isoformat()
+        _WA_STATE["account_phone"] = payload.account_phone
+        _WA_STATE["account_name"] = payload.account_name
 
     if payload.status != prev_status:
         title_map = {
@@ -740,6 +766,11 @@ def update_whatsapp_state(payload: WhatsAppStateRequest) -> dict[str, str]:
 
 @app.post("/api/whatsapp/restart")
 def restart_whatsapp_bridge() -> dict[str, Any]:
+    with _WA_OPERATION_LOCK:
+        return _restart_whatsapp_bridge()
+
+
+def _restart_whatsapp_bridge() -> dict[str, Any]:
     """Reinicia limpiamente el proceso Node.js de whatsapp_bridge."""
     killed = _kill_whatsapp_bridge()
     time.sleep(0.4)
@@ -776,6 +807,50 @@ def restart_whatsapp_bridge() -> dict[str, Any]:
     return {"status": "ok", "killed": killed, "pid": proc.pid}
 
 
+@app.get("/api/whatsapp/session", dependencies=[Depends(require_local)])
+def whatsapp_session():
+    with _WA_STATE_LOCK:
+        state = dict(_WA_STATE)
+    try:
+        credentials = json.loads((WHATSAPP_DIR / "auth_info_baileys" / "creds.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        credentials = {}
+    identity = credentials.get("me") or {}
+    phone = state.get("account_phone") or str(identity.get("id", "")).split("@")[0].split(":")[0]
+    return {"phone": phone, "name": state.get("account_name") or identity.get("name", ""), "device": "Vortex AI Desktop · este equipo", "status": state["status"] if _find_whatsapp_bridge_procs() else "stopped", "detail": state.get("detail", ""), "has_session": bool(credentials.get("registered") or identity.get("id")), "updated_at": state.get("updated_at", "")}
+
+
+class WhatsAppDisconnectRequest(BaseModel):
+    generate_qr: bool = False
+
+
+@app.post("/api/whatsapp/disconnect", dependencies=[Depends(require_local)])
+def disconnect_whatsapp(payload: WhatsAppDisconnectRequest):
+    import shutil
+    with _WA_OPERATION_LOCK:
+        revoked = False
+        try:
+            port = int(get_env("WHATSAPP_NOTIFY_PORT", "8001") or "8001")
+            request = urllib.request.Request(f"http://127.0.0.1:{port}/session/logout", data=b"{}", headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                revoked = bool(json.load(response).get("revoked"))
+        except Exception:
+            pass
+        _kill_whatsapp_bridge()
+        auth = (WHATSAPP_DIR / "auth_info_baileys").resolve()
+        if auth.parent != WHATSAPP_DIR.resolve() or auth.name != "auth_info_baileys":
+            raise HTTPException(500, "Ruta de sesión inesperada")
+        if auth.exists():
+            shutil.rmtree(auth)
+        for filename in ("contacts_cache.json", "processed_messages.json"):
+            (WHATSAPP_DIR / filename).unlink(missing_ok=True)
+        with _WA_STATE_LOCK:
+            _WA_STATE.update(status="disconnected", detail="Sesión eliminada de este equipo", qr_text="", account_phone="", account_name="", updated_at=datetime.now(LIMA_TZ).isoformat())
+        if payload.generate_qr:
+            _restart_whatsapp_bridge()
+        return {"disconnected": True, "revoked": revoked, "generating_qr": payload.generate_qr}
+
+
 @app.post("/system/shutdown")
 def system_shutdown() -> dict[str, str]:
     """Detiene limpiamente WhatsApp Bridge y apaga el servidor FastAPI."""
@@ -795,9 +870,14 @@ def prepare_managed_chat(managed_chat: str, message: str) -> str:
     chat, messages = begin_turn(managed_chat, message)
     sender = "chat-" + managed_chat
     history = []
-    if chat["context"]:
+    from agent_core.chats import chat_workspace
+    folder = chat_workspace(managed_chat)
+    context = chat["context"]
+    if folder:
+        context = f"Proyecto de trabajo. Carpeta asociada: {folder}. Ejecuta las tareas de este proyecto en esa carpeta.\n" + context
+    if context:
         history.extend([
-            types.Content(role="user", parts=[types.Part.from_text(text="Contexto guardado por el usuario para esta conversación:\n" + chat["context"])]),
+            types.Content(role="user", parts=[types.Part.from_text(text="Contexto de esta conversación:\n" + context)]),
             types.Content(role="model", parts=[types.Part.from_text(text="Contexto recibido.")]),
         ])
     # Acota el texto enviado al modelo y conserva el historial completo en SQLite.
@@ -820,11 +900,12 @@ def prepare_managed_chat(managed_chat: str, message: str) -> str:
 def chat_endpoint(payload: ChatRequest) -> AgentResponse | JSONResponse:
     """Procesa un mensaje de texto enviado desde WhatsApp o Dashboard PC."""
     managed_chat = payload.chat_id if payload.source == "dashboard" else None
+    original_sender = payload.sender
     if payload.source == "whatsapp":
         from agent_core.chats import whatsapp_chat_command
         command_reply, managed_chat = whatsapp_chat_command(payload.sender, payload.message)
         if command_reply:
-            return AgentResponse(reply=command_reply, model="local", duration_ms=0)
+            return AgentResponse(reply=command_reply, chat_id=managed_chat, model="local", duration_ms=0)
     if managed_chat:
         payload.sender = prepare_managed_chat(managed_chat, payload.message)
     try:
@@ -833,8 +914,26 @@ def chat_endpoint(payload: ChatRequest) -> AgentResponse | JSONResponse:
             sender=payload.sender,
             source=payload.source,
         )
+        if managed_chat and not result.get("model"):
+            from agent_core.local_drafts import create_html_draft
+            from agent_core.chats import chat_workspace
+            draft = create_html_draft(payload.message, chat_workspace(managed_chat))
+            if draft:
+                result["reply"] = "Creé una base HTML local en " + draft + ". La IA no pudo completar el diseño solicitado; este archivo es un borrador básico para continuar, no la tarea terminada."
+                result["model"] = "local"
         if managed_chat:
             end_turn(managed_chat, result)
+        project_chat = result.get("project_chat_id")
+        if project_chat:
+            if project_chat != managed_chat:
+                begin_turn(project_chat, payload.message)
+                end_turn(project_chat, result)
+            if payload.source == "whatsapp":
+                from agent_core.chats import select_whatsapp_chat
+                select_whatsapp_chat(original_sender, project_chat)
+            result["chat_id"] = project_chat
+        else:
+            result["chat_id"] = managed_chat
         if payload.source == "whatsapp":
             result["reply"] = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result.get("reply", ""), flags=re.DOTALL)
         return AgentResponse(**result)

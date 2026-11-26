@@ -115,21 +115,13 @@ npm install
 cd ..
 ```
 
-### Paso 4: Configurar variables de entorno (`.env`)
-Copia la plantilla `.env.example` a `.env` y completa tus datos:
-```powershell
-copy .env.example .env
-```
+### Paso 4: Configurar conexiones desde el panel
 
-Variables principales en `.env`:
-- `GEMINI_API_KEY`: Tu clave de API de Google AI Studio.
-- `GEMINI_MODEL`, `GEMINI_MODELS_FAST`, `GEMINI_MODELS_COMPLEX`: Modelos de Gemini a utilizar en el enrutador.
-- `INSTITUTIONAL_EMAIL`: Tu correo institucional (ej. `tu_correo@unsa.edu.pe`), usado como contexto del perfil UNSA.
-- `DUTIC_ICAL_URL`: En DUTIC (Moodle) -> **Calendario** -> **Exportar calendario** -> *"Todos los eventos"* y *"Eventos próximos"* -> **Obtener URL del calendario**.
-- `ALLOWED_PHONE_NUMBER`: Tu número de WhatsApp con código de país, sin `+` ni espacios (ej. `51987654321`). Solo este número podrá controlar al agente.
-- `BOT_PREFIX`: Prefijo opcional (ej. `!` o `/bot`). Déjalo vacío para escribir directamente en tu chat personal.
-- `GOOGLE_CALENDAR_ID`: `primary` (por defecto) o el ID de tu calendario.
-- `AGENT_HOST`, `AGENT_PORT`, `WHATSAPP_NOTIFY_PORT`: Puertos locales (por defecto `127.0.0.1:8000` y `8001`).
+Abre el programa y entra a **Configuración → Claves de API**. Selecciona **Gemini** o **GLM · Z.ai**, agrega tu clave y pulsa **Guardar y comprobar**. Cada fila permite comprobar, editar, eliminar, mostrar y copiar la clave. La comprobación hace una consulta breve real y detecta el catálogo de modelos para organizar automáticamente las colas rápidas y complejas.
+
+Las claves se guardan cifradas con DPAPI para el usuario actual de Windows en `.provider_keys.json`, ignorado por Git. Al iniciar por primera vez se migran las claves existentes de `.env`. Para GLM se requiere una clave de la API estándar de Z.ai. Si el proveedor no publica un catálogo, se prueban las variantes Flash gratuitas documentadas. La clasificación por familia no garantiza cuota ni acceso a cada modelo.
+
+Configura el número autorizado y el prefijo en **WhatsApp**. El correo institucional, el calendario y la URL iCal de DUTIC se configuran en **Integraciones**.
 
 ### Paso 5: Autenticación con Google Classroom, Drive y Calendar *(Opcional)*
 1. Ve a [Google Cloud Console](https://console.cloud.google.com/), crea un proyecto y habilita:

@@ -1,11 +1,12 @@
-"""Configuración local de conexiones desde el panel de administración."""
+"""Configuración local de conexiones. Módulo hecho para Vortex AI Desktop."""
 
 import json
 import os
 import threading
+from typing import Literal
 from urllib.parse import urlparse
 
-from dotenv import set_key
+from dotenv import set_key, unset_key
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -24,21 +25,43 @@ router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_local)])
 _lock = threading.Lock()
 _auth_state = {"status": "idle", "message": ""}
 _preferred_key = ""
+GOOGLE_CONNECTION_META_PATH = CREDENTIALS_PATH.with_name("google_connection.json")
 FIELDS = ("INSTITUTIONAL_EMAIL", "ALLOWED_PHONE_NUMBER", "BOT_PREFIX", "GOOGLE_CALENDAR_ID")
 
 
+class WebGenerationSettings(BaseModel):
+    enabled: bool = False
+    browser: Literal["brave", "chrome", "edge"] = "brave"
+
+
+@router.get("/web-generation")
+def read_web_generation():
+    return {"enabled": get_env("ALLOW_WEB_GENERATION", "false").lower() == "true", "browser": get_env("WEB_AI_BROWSER", "brave")}
+
+
+@router.post("/web-generation")
+def save_web_generation(payload: WebGenerationSettings):
+    values = {"ALLOW_WEB_GENERATION": str(payload.enabled).lower(), "WEB_AI_BROWSER": payload.browser}
+    with _lock:
+        temporary = ENV_PATH.with_suffix(".pending")
+        try:
+            temporary.write_text(ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else "", encoding="utf-8")
+            for key, value in values.items():
+                set_key(str(temporary), key, value)
+            os.replace(temporary, ENV_PATH)
+            os.environ.update(values)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return {"saved": True, **payload.model_dump()}
+
+
 class ConnectionSettings(BaseModel):
-    gemini_key: str = Field(default="", max_length=1000)
     institutional_email: str = Field(default="", max_length=254)
     allowed_phone_number: str = Field(default="", max_length=20)
     bot_prefix: str = Field(default="", max_length=40)
     google_calendar_id: str = Field(default="primary", max_length=300)
     dutic_url: str = Field(default="", max_length=4000)
-    gemini_keys: list[str] | None = Field(default=None, max_length=20)
-    replace_keys: bool = False
-    gemini_model: str = Field(default="", max_length=120)
-    gemini_models_fast: str = Field(default="", max_length=2000)
-    gemini_models_complex: str = Field(default="", max_length=2000)
+
 
 
 @router.get("/settings")
@@ -55,6 +78,7 @@ def read_settings():
             "dutic_configured": bool(get_env("DUTIC_ICAL_URL")),
             "credentials_uploaded": CREDENTIALS_PATH.exists(),
             "google_connected": TOKEN_PATH.exists(),
+            "google_connection": google_connection_info(),
             "google_auth": dict(_auth_state),
             "key_count": len(get_gemini_keys()),
             "models": {name.lower(): get_env(name) for name in ("GEMINI_MODEL", "GEMINI_MODELS_FAST", "GEMINI_MODELS_COMPLEX")},
@@ -71,22 +95,8 @@ def save_settings(payload: ConnectionSettings):
     if payload.dutic_url and urlparse(payload.dutic_url).scheme not in ("https", "http"):
         raise HTTPException(422, "La URL del calendario debe comenzar con https:// o http://")
     values = {key: getattr(payload, key.lower()).strip() for key in FIELDS}
-    if payload.gemini_key.strip():
-        values["GEMINI_API_KEY"] = payload.gemini_key.strip()
     if payload.dutic_url.strip():
         values["DUTIC_ICAL_URL"] = payload.dutic_url.strip()
-    if payload.gemini_keys is not None:
-        keys = list(dict.fromkeys(key.strip() for key in payload.gemini_keys if key.strip()))
-        if not keys or any(len(key) > 1000 or any(c.isspace() for c in key) for key in keys):
-            raise HTTPException(422, "Agrega al menos una clave válida, una por línea")
-        if not payload.replace_keys:
-            keys = list(dict.fromkeys([*get_gemini_keys(), *keys]))
-        values["GEMINI_API_KEYS"] = json.dumps(keys)
-        values["GEMINI_API_KEY"] = keys[0]
-    for name in ("GEMINI_MODEL", "GEMINI_MODELS_FAST", "GEMINI_MODELS_COMPLEX"):
-        value = getattr(payload, name.lower()).strip()
-        if value:
-            values[name] = value
     with _lock:
         old_phone, old_prefix = get_env("ALLOWED_PHONE_NUMBER"), get_env("BOT_PREFIX")
         # Reemplazo atómico del archivo completo, conservando los demás ajustes.
@@ -99,30 +109,27 @@ def save_settings(payload: ConnectionSettings):
         finally:
             temporary.unlink(missing_ok=True)
         os.environ.update(values)
-        from agent_core import config
-        for name in ("GEMINI_MODELS_FAST", "GEMINI_MODELS_COMPLEX"):
-            if name in values:
-                getattr(config, name)[:] = list(dict.fromkeys(part.strip() for part in values[name].split(",") if part.strip()))
-        if "GEMINI_MODEL" in values:
-            # Los módulos existentes importan este valor por nombre.
-            import sys
-            for name in ("agent_core.config", "agent_core.agent", "agent_core.tools", "agent_core.tools_drive", "agent_core.server"):
-                module = sys.modules.get(name)
-                if module:
-                    module.GEMINI_MODEL = values["GEMINI_MODEL"]
     return {"saved": True, "restart_whatsapp": old_phone != phone or old_prefix != payload.bot_prefix.strip()}
 
 
+@router.delete("/dutic")
+def remove_dutic_connection():
+    with _lock:
+        if ENV_PATH.exists():
+            temporary = ENV_PATH.with_suffix(".pending")
+            try:
+                temporary.write_text(ENV_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+                unset_key(str(temporary), "DUTIC_ICAL_URL")
+                os.replace(temporary, ENV_PATH)
+            finally:
+                temporary.unlink(missing_ok=True)
+        os.environ.pop("DUTIC_ICAL_URL", None)
+    return {"removed": True, "dutic_configured": False}
+
+
 def get_gemini_keys() -> list[str]:
-    try:
-        keys = json.loads(get_env("GEMINI_API_KEYS", "[]"))
-        if isinstance(keys, list) and keys:
-            unique = list(dict.fromkeys(str(key) for key in keys if key))
-            return sorted(unique, key=lambda key: key != _preferred_key)
-    except ValueError:
-        pass
-    key = get_env("GEMINI_API_KEY")
-    return [key] if key else []
+    from agent_core.provider_keys import credentials
+    return sorted([key for _, key, _ in credentials("gemini")], key=lambda key: key != _preferred_key)
 
 
 def prefer_gemini_key(key: str) -> None:
@@ -132,18 +139,31 @@ def prefer_gemini_key(key: str) -> None:
 
 @router.post("/gemini/test")
 def test_gemini():
-    from google import genai
-    try:
-        client = genai.Client(api_key=get_env("GEMINI_API_KEY"), http_options={"timeout": 20000})
-        with client:
-            models = list(client.models.list())
-        return {"ok": True, "message": f"Clave aceptada. {len(models)} modelos visibles en el catálogo."}
-    except Exception:
-        raise HTTPException(400, "No se pudo validar la clave. Revisa la clave, la conexión y el acceso al proyecto.")
+    from agent_core.provider_keys import credentials, test_key
+    keys = credentials("gemini")
+    if not keys:
+        raise HTTPException(400, "Agrega una clave de Gemini en Configuración")
+    return test_key(keys[0][0])
 
 
 class GoogleCredentials(BaseModel):
     document: dict
+    filename: str = Field(default="credentials.json", max_length=255)
+
+
+def google_connection_info() -> dict:
+    metadata = {}
+    try:
+        if GOOGLE_CONNECTION_META_PATH.exists():
+            metadata = json.loads(GOOGLE_CONNECTION_META_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        metadata = {}
+    return {
+        "authorized": TOKEN_PATH.exists(),
+        "credentials_uploaded": CREDENTIALS_PATH.exists(),
+        "credential_file": str(metadata.get("filename") or ("credentials.json" if CREDENTIALS_PATH.exists() else "")),
+        "account": get_env("INSTITUTIONAL_EMAIL", ""),
+    }
 
 
 @router.post("/google/credentials")
@@ -157,7 +177,27 @@ def upload_credentials(payload: GoogleCredentials):
         if _auth_state["status"] == "pending":
             raise HTTPException(409, "Hay una autorización en curso")
         CREDENTIALS_PATH.write_text(json.dumps(payload.document), encoding="utf-8")
+        safe_name = os.path.basename(payload.filename.strip()) or "credentials.json"
+        GOOGLE_CONNECTION_META_PATH.write_text(json.dumps({"filename": safe_name}), encoding="utf-8")
     return {"saved": True}
+
+
+@router.post("/google/disconnect")
+def disconnect_google():
+    with _lock:
+        TOKEN_PATH.unlink(missing_ok=True)
+        _auth_state.update(status="idle", message="Cuenta Google desconectada")
+    return {"disconnected": True, **google_connection_info()}
+
+
+@router.delete("/google/connection")
+def remove_google_connection():
+    with _lock:
+        TOKEN_PATH.unlink(missing_ok=True)
+        CREDENTIALS_PATH.unlink(missing_ok=True)
+        GOOGLE_CONNECTION_META_PATH.unlink(missing_ok=True)
+        _auth_state.update(status="idle", message="Conexión Google eliminada")
+    return {"removed": True, **google_connection_info()}
 
 
 @router.post("/google/connect")
