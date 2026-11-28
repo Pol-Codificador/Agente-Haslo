@@ -61,6 +61,7 @@ from agent_core.tools import (
     take_screenshot,
 )
 from agent_core.watchdog import watchdog_manager
+from agent_core import telegram_bridge
 
 # Cebar lectura inicial de CPU para consultas instantáneas no bloqueantes en /api/status
 psutil.cpu_percent(interval=None)
@@ -144,6 +145,7 @@ def _on_server_startup() -> None:
         cleanup_old_temp_media(max_age_sec=86400)
     except Exception:
         pass
+    telegram_bridge.start()
 
 _WA_STATE_LOCK = threading.Lock()
 _WA_STATE: dict[str, Any] = {
@@ -209,6 +211,12 @@ class AlertCreateRequest(BaseModel):
 class WhatsAppContactRequest(BaseModel):
     name: str = Field(..., min_length=1)
     phone: str = Field(..., min_length=1)
+
+
+class TelegramConfigRequest(BaseModel):
+    token: str = Field(default="", max_length=200)
+    chat_id: str = Field(default="", max_length=40)
+    keep_token: bool = True
 
 
 class AgentResponse(BaseModel):
@@ -462,6 +470,53 @@ def whatsapp_qr():
     output = io.BytesIO()
     qrcode.make(qr_text).save(output, format="PNG")
     return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/telegram/status", dependencies=[Depends(require_local)])
+def telegram_status() -> dict[str, Any]:
+    """Estado seguro del bot; nunca devuelve el token."""
+    return telegram_bridge.status()
+
+
+@app.post("/api/telegram/config", dependencies=[Depends(require_local)])
+def telegram_config(payload: TelegramConfigRequest) -> dict[str, Any]:
+    token = payload.token.strip()
+    current_token = get_env("TELEGRAM_BOT_TOKEN", "").strip()
+    selected_token = current_token if payload.keep_token and not token else token
+    if not selected_token:
+        raise HTTPException(status_code=422, detail="Pega el token que te entregó @BotFather")
+    try:
+        bot = telegram_bridge.validate_token(selected_token)
+        telegram_bridge.save_config(token=selected_token, chat_id=payload.chat_id)
+        telegram_bridge.start()
+        agent.log_event("telegram", "Bot de Telegram conectado", "@" + bot.get("username", ""), status="ok")
+        return {**telegram_bridge.status(), "bot": bot}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se pudo validar el bot: {exc}") from exc
+
+
+@app.post("/api/telegram/authorize-pending", dependencies=[Depends(require_local)])
+def telegram_authorize_pending() -> dict[str, Any]:
+    try:
+        result = telegram_bridge.authorize_pending()
+        agent.log_event("telegram", "Chat de Telegram autorizado", result.get("authorized_chat_id", ""), status="ok")
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/telegram/restart", dependencies=[Depends(require_local)])
+def telegram_restart() -> dict[str, Any]:
+    return telegram_bridge.start()
+
+
+@app.delete("/api/telegram/config", dependencies=[Depends(require_local)])
+def telegram_disconnect() -> dict[str, Any]:
+    result = telegram_bridge.disconnect()
+    agent.log_event("telegram", "Telegram desconectado", "Token local eliminado", status="warn")
+    return result
 
 
 @app.get("/api/status")
@@ -853,9 +908,10 @@ def disconnect_whatsapp(payload: WhatsAppDisconnectRequest):
 
 @app.post("/system/shutdown")
 def system_shutdown() -> dict[str, str]:
-    """Detiene limpiamente WhatsApp Bridge y apaga el servidor FastAPI."""
+    """Detiene los puentes y apaga el servidor FastAPI."""
     agent.log_event("system", "Apagado total solicitado", "Cerrando puente y servidor", status="warn")
     _kill_whatsapp_bridge()
+    telegram_bridge.stop()
 
     def _delayed_exit() -> None:
         time.sleep(0.35)
@@ -901,7 +957,7 @@ def chat_endpoint(payload: ChatRequest) -> AgentResponse | JSONResponse:
     """Procesa un mensaje de texto enviado desde WhatsApp o Dashboard PC."""
     managed_chat = payload.chat_id if payload.source == "dashboard" else None
     original_sender = payload.sender
-    if payload.source == "whatsapp":
+    if payload.source in ("whatsapp", "telegram"):
         from agent_core.chats import whatsapp_chat_command
         command_reply, managed_chat = whatsapp_chat_command(payload.sender, payload.message)
         if command_reply:
@@ -928,13 +984,13 @@ def chat_endpoint(payload: ChatRequest) -> AgentResponse | JSONResponse:
             if project_chat != managed_chat:
                 begin_turn(project_chat, payload.message)
                 end_turn(project_chat, result)
-            if payload.source == "whatsapp":
+            if payload.source in ("whatsapp", "telegram"):
                 from agent_core.chats import select_whatsapp_chat
                 select_whatsapp_chat(original_sender, project_chat)
             result["chat_id"] = project_chat
         else:
             result["chat_id"] = managed_chat
-        if payload.source == "whatsapp":
+        if payload.source in ("whatsapp", "telegram"):
             result["reply"] = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result.get("reply", ""), flags=re.DOTALL)
         return AgentResponse(**result)
     except Exception as exc:
@@ -984,7 +1040,7 @@ def audio_endpoint(payload: AudioRequest) -> AgentResponse | JSONResponse:
         )
 
     managed_chat = None
-    if payload.source == "whatsapp":
+    if payload.source in ("whatsapp", "telegram"):
         from agent_core.chats import whatsapp_chat_command
         _, managed_chat = whatsapp_chat_command(payload.sender, "")
     if managed_chat:
@@ -997,7 +1053,7 @@ def audio_endpoint(payload: AudioRequest) -> AgentResponse | JSONResponse:
         )
         if managed_chat:
             end_turn(managed_chat, result)
-        if payload.source == "whatsapp":
+        if payload.source in ("whatsapp", "telegram"):
             result["reply"] = re.sub(r"\*\*(.+?)\*\*", r"*\1*", result.get("reply", ""), flags=re.DOTALL)
         return AgentResponse(**result)
     except Exception as exc:

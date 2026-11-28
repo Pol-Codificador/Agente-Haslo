@@ -1,4 +1,4 @@
-"""Lanzador silencioso del Vortex AI Desktop (FastAPI + WhatsApp Bridge + Brave App Mode)."""
+"""Lanzador silencioso de Vortex AI Desktop (FastAPI + Telegram + App Mode)."""
 
 from __future__ import annotations
 
@@ -192,7 +192,7 @@ def launch(open_browser: bool = True) -> int:
     env["PYTHONIOENCODING"] = "utf-8"
 
     backend_log = open(TEMP_DIR / "backend.log", "w", encoding="utf-8", errors="replace")
-    wa_log = open(TEMP_DIR / "whatsapp.log", "w", encoding="utf-8", errors="replace")
+    wa_log = None
 
     backend_proc = subprocess.Popen(
         [
@@ -222,15 +222,19 @@ def launch(open_browser: bool = True) -> int:
         )
         return 1
 
-    subprocess.Popen(
-        ["node", "index.js"],
-        cwd=str(WHATSAPP_DIR),
-        env=env,
-        stdout=wa_log,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        creationflags=DAEMON_FLAGS,
-    )
+    # Baileys simula WhatsApp Web y puede provocar restricciones. Permanece
+    # apagado salvo que el usuario lo habilite expresamente en .env.
+    if get_env("ENABLE_WHATSAPP_BRIDGE", "false").lower() == "true":
+        wa_log = open(TEMP_DIR / "whatsapp.log", "w", encoding="utf-8", errors="replace")
+        subprocess.Popen(
+            ["node", "index.js"],
+            cwd=str(WHATSAPP_DIR),
+            env=env,
+            stdout=wa_log,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=DAEMON_FLAGS,
+        )
 
     if open_browser:
         open_dashboard_app(DASHBOARD_URL)

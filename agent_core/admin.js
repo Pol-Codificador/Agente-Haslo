@@ -47,6 +47,12 @@ const pages = [
     ["vipContactsPanelTitle"],
   ],
   [
+    "telegram",
+    "Telegram",
+    "Bot oficial, acceso y estado de conexión",
+    [],
+  ],
+  [
     "integrations",
     "Integraciones",
     "Google Classroom, Drive, Calendar y DUTIC",
@@ -78,6 +84,7 @@ const icons = [
   "M4 4h16v12H8l-4 4z",
   "M12 3v4 M12 17v4 M3 12h4 M17 12h4 M8 8h8v8H8z",
   "M5 3h14v18H5z M9 17h6",
+  "M21 3 3.8 10.1c-1.2.5-1.1 1.2-.2 1.5l4.4 1.4 1.7 5.3c.2.7.4.7.9.2l2.5-2.4 4.9 3.6c.9.5 1.5.2 1.7-.8L22 4.1c.3-1.2-.5-1.6-1-1.1z M8.2 12.5 18.4 6",
   "M9 3v6h6V3 M9 15v6 M15 15v6 M5 9h14v6H5z",
   "M3 5h7l2 3h9v12H3z",
   "M4 4h16v16H4z M8 8h8 M8 12h8 M8 16h5",
@@ -210,6 +217,10 @@ panel(
 panel(
   "whatsapp",
   `<h3>Acceso a WhatsApp</h3><p class="usage-note">Comandos disponibles · /chats para listar · /chat 1 para elegir · /nuevo Nombre para crear · /salir para volver al chat general.</p><p class="section-description">Vincula el dispositivo con el QR y configura qué número puede dar instrucciones.</p><form id="whatsappForm"><div class="admin-form">${field("Número autorizado", "allowedPhone", "tel", "Código de país y número, sin + ni espacios.")}${field("Prefijo de activación", "botPrefix", "text", "Opcional. Vacío para escribir directamente.")}</div><div class="form-actions"><button class="btn btn-primary">Guardar y aplicar conexión</button><button type="button" class="btn" onclick="restartWhatsApp()">Reconectar WhatsApp</button><span class="admin-feedback" id="whatsappFeedback" role="status"></span></div></form>`,
+);
+panel(
+  "telegram",
+  `<div class="integration-heading"><div><h3>Telegram Bot</h3><p class="section-description">Conecta Vortex mediante la API oficial de Telegram. No usa códigos QR ni tu cuenta personal.</p></div><span class="connection-state" id="telegramState">Consultando estado</span></div><div class="google-connection-card"><div><strong id="telegramBotName">Sin bot configurado</strong><small id="telegramDetail">Crea un bot con @BotFather y pega aquí su token.</small></div><div class="google-connection-actions"><button class="btn" type="button" id="restartTelegram">Reiniciar</button><button class="btn btn-danger" type="button" id="disconnectTelegram">Desconectar</button></div></div><form id="telegramForm"><div class="admin-form">${field("Token del bot", "telegramToken", "password", "En Telegram abre @BotFather, usa /newbot y copia el token. Se guarda localmente y nunca se muestra de nuevo.")}${field("Chat ID autorizado", "telegramChatId", "text", "Opcional: envía /start al bot y Vortex detectará tu chat para autorizarlo.")}</div><div class="form-actions"><button class="btn btn-primary">Conectar bot</button><button class="btn" type="button" id="authorizeTelegramChat">Autorizar chat detectado</button><span id="telegramFeedback" class="admin-feedback" role="status"></span></div></form><div class="usage-note"><strong>Cómo conectarlo:</strong> 1. Crea el bot con @BotFather. 2. Guarda aquí el token. 3. Abre el bot en Telegram y envía /start. 4. Regresa y pulsa “Autorizar chat detectado”.<br><br>Comandos: /chats · /chat 1 · /nuevo Nombre · /salir</div>`,
 );
 panel(
   "integrations",
@@ -945,3 +956,98 @@ document.getElementById("saveWebGeneration").onclick = async function(){
  finally {this.disabled = false;}
 };
 loadWebGeneration().catch(error=>document.getElementById("webGenerationFeedback").textContent=error.message);
+
+async function loadTelegramStatus() {
+  const data = await adminRequest("/api/telegram/status");
+  const state = document.getElementById("telegramState");
+  const labels = {
+    connected: "Conectado",
+    pending_authorization: "Chat pendiente",
+    not_configured: "Sin configurar",
+    invalid_token: "Token inválido",
+    offline: "Sin conexión",
+    error: "Error",
+  };
+  state.textContent = labels[data.status] || data.status || "Desconectado";
+  document.getElementById("telegramBotName").textContent = data.bot_username
+    ? `${data.bot_name || "Bot"} · @${data.bot_username}`
+    : "Sin bot configurado";
+  const pending = data.pending_chat_id
+    ? ` Chat detectado: ${data.pending_chat_name || data.pending_chat_id}.`
+    : "";
+  document.getElementById("telegramDetail").textContent = (data.detail || "") + pending;
+  const chatIdInput = document.getElementById("telegramChatId");
+  if (document.activeElement !== chatIdInput && !chatIdInput.dataset.dirty)
+    chatIdInput.value = data.authorized_chat_id || "";
+  document.getElementById("telegramToken").placeholder = data.configured
+    ? "Token guardado · déjalo vacío para conservarlo"
+    : "123456789:AA...";
+  document.getElementById("authorizeTelegramChat").disabled = !data.pending_chat_id;
+  document.getElementById("disconnectTelegram").hidden = !data.configured;
+}
+
+document.getElementById("telegramForm").onsubmit = async function (event) {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true;
+  const feedback = document.getElementById("telegramFeedback");
+  try {
+    await adminRequest("/api/telegram/config", "POST", {
+      token: document.getElementById("telegramToken").value.trim(),
+      chat_id: document.getElementById("telegramChatId").value.trim(),
+      keep_token: true,
+    });
+    document.getElementById("telegramToken").value = "";
+    delete document.getElementById("telegramChatId").dataset.dirty;
+    feedback.textContent = "Bot conectado. Ahora envía /start en Telegram.";
+    await loadTelegramStatus();
+  } catch (error) {
+    feedback.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+document.getElementById("telegramChatId").addEventListener("input", function () {
+  this.dataset.dirty = "true";
+});
+
+document.getElementById("authorizeTelegramChat").onclick = async function () {
+  this.disabled = true;
+  try {
+    await adminRequest("/api/telegram/authorize-pending", "POST", {});
+    document.getElementById("telegramFeedback").textContent = "Chat autorizado. Ya puedes conversar con Vortex desde Telegram.";
+  } catch (error) {
+    document.getElementById("telegramFeedback").textContent = error.message;
+  } finally {
+    await loadTelegramStatus();
+  }
+};
+
+document.getElementById("restartTelegram").onclick = async function () {
+  this.disabled = true;
+  try {
+    await adminRequest("/api/telegram/restart", "POST", {});
+    document.getElementById("telegramFeedback").textContent = "Puente de Telegram reiniciado.";
+  } catch (error) {
+    document.getElementById("telegramFeedback").textContent = error.message;
+  } finally {
+    this.disabled = false;
+    await loadTelegramStatus();
+  }
+};
+
+document.getElementById("disconnectTelegram").onclick = async function () {
+  const approved = await showUiDialog({title:"Desconectar Telegram", message:"Se eliminarán localmente el token y el Chat ID del bot.", confirmLabel:"Desconectar", danger:true});
+  if (!approved) return;
+  try {
+    await adminRequest("/api/telegram/config", "DELETE");
+    document.getElementById("telegramFeedback").textContent = "Telegram desconectado.";
+    await loadTelegramStatus();
+  } catch (error) {
+    document.getElementById("telegramFeedback").textContent = error.message;
+  }
+};
+
+loadTelegramStatus().catch(error => document.getElementById("telegramFeedback").textContent = error.message);
+setInterval(() => loadTelegramStatus().catch(() => {}), 4000);
